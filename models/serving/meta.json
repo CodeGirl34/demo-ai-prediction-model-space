@@ -1,0 +1,55 @@
+{
+  "trained_on": "m2020",
+  "channels": [
+    "sensed_accel_m_s2",
+    "vertical_speed_m_s"
+  ],
+  "context": [
+    "log_altitude",
+    "speed_rel_mars_m_s"
+  ],
+  "scaler": {
+    "lo": {
+      "sensed_accel_m_s2": -0.17865128171096004,
+      "vertical_speed_m_s": -2995.825269109715,
+      "log_altitude": -2.069114441641307,
+      "speed_rel_mars_m_s": 0.2383893158354302
+    },
+    "hi": {
+      "sensed_accel_m_s2": 105.36977368500591,
+      "vertical_speed_m_s": 3.1893795116004044,
+      "log_altitude": 3.1530386264882106,
+      "speed_rel_mars_m_s": 5366.611271159564
+    }
+  },
+  "n_features": {
+    "lstm_phase_blind__sensed_accel_m_s2.pt": 4,
+    "lstm_phase_aware__sensed_accel_m_s2.pt": 9,
+    "lstm_phase_blind__vertical_speed_m_s.pt": 4,
+    "lstm_phase_aware__vertical_speed_m_s.pt": 9
+  },
+  "config": {
+    "l_s": 60,
+    "n_predictions": 5,
+    "hidden_sizes": [
+      80,
+      80
+    ],
+    "dropout": 0.3,
+    "epochs": 25,
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "validation_split": 0.2,
+    "patience": 6,
+    "min_delta": 0.0003,
+    "error_batch_size": 70,
+    "window_size": 30,
+    "smoothing_perc": 0.004761904761904762,
+    "error_buffer": 30,
+    "p": 0.13,
+    "sd_lim": 12.0,
+    "seed": 42,
+    "keras_compat": false,
+    "n_seeds": 1
+  }
+}

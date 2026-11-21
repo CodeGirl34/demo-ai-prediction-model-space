@@ -4,3 +4,9 @@ scikit-learn
 torch
 matplotlib
 spiceypy
+fastapi
+uvicorn[standard]
+joblib
+# dev / tests
+pytest
+httpx

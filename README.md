@@ -15,7 +15,7 @@ MSL / SMAP telemetry ───────────────────�
 | **1. Anomaly engine** | NASA SMAP & MSL telemetry with expert-labeled anomalies | ✅ implemented, validated |
 | **2. Mission phase classifier** | Perseverance + Curiosity reconstructed trajectories from NASA SPICE | ✅ implemented, cross-mission tested |
 | **3. Fault injection + phase-aware detection** | Six sensor-fault types injected into both landings | ✅ implemented, cross-mission tested |
-| 4. API + mobile app | FastAPI backend, Flutter dashboard | planned |
+| **4. API + app** | FastAPI backend serving the module 2–3 models, Flutter dashboard (web, iOS, Android, macOS) | ✅ implemented, tested |
 
 ---
 
@@ -232,6 +232,75 @@ Next steps: train several seeds per model, and add physics cross-checks between 
 
 ---
 
+## Module 4 — API and Flutter app
+
+The trained models from modules 2–3 run behind a **FastAPI** backend. A **Flutter** dashboard
+replays a Mars landing second by second, shows what the AI thinks the mission phase is, and
+raises alarms when an injected sensor fault appears.
+
+![Landing replay: Curiosity, models trained on Perseverance](docs/screenshots/landing_replay.jpg)
+
+| Overview | Telemetry (module 1) | Phone layout |
+|---|---|---|
+| ![](docs/screenshots/overview.jpg) | ![](docs/screenshots/telemetry.jpg) | ![](docs/screenshots/phone.jpg) |
+
+**Screens**
+
+* **Overview**: headline results of every module, plus the two landings with their event timelines.
+* **Landing replay**: pick Curiosity (the test landing) or Perseverance (the training landing) and a
+  sensor, then add faults (type + phase) or "surprise me" random ones. Playback at 10× / 30× / 90×
+  shows:
+  * the AI phase estimate against NASA's timeline
+  * altitude
+  * the sensor trace with fault and alarm bands
+  * the LSTM anomaly score
+  * an alert feed that says whether each alarm matches an injected fault or is a false alarm
+* **Telemetry**: the 27 NASA MSL channels from module 1, with the expert-labeled and detected
+  anomaly windows over the LSTM prediction.
+
+**What the API runs.** Replays use the same models measured in module 3:
+* the phase classifier and phase-aware LSTMs trained on Perseverance only
+* the persistence baseline OR the phase-aware LSTM
+
+`scripts/export_serving_models.py` re-trains them with the experiment's seed and checks that their
+alarms on the clean Curiosity landing are identical to the published results. The exported models
+take 2.5 MB in `models/serving/`. A replay request takes about 3 s on a laptop CPU.
+
+| Endpoint | |
+|---|---|
+| `GET /api/health` | status, channels, fault types, phases |
+| `GET /api/summary` | headline metrics of modules 1–3 |
+| `GET /api/missions` | both landings with as-flown events (seconds to touchdown) |
+| `GET /api/missions/{msl\|m2020}/trajectory` | altitude, speed, phase over time |
+| `POST /api/missions/{msl\|m2020}/replay` | inject faults → phase estimate, anomaly score, alarms, caught / missed faults |
+| `GET /api/telemetry/channels[/{id}]` | module-1 MSL channel results and series |
+
+Interactive docs: `http://localhost:8000/docs`. Example:
+
+```bash
+curl -X POST localhost:8000/api/missions/msl/replay -H 'Content-Type: application/json' \
+  -d '{"channel": "vertical_speed_m_s", "faults": [{"kind": "drift", "phase": "parachute"}]}'
+```
+
+**Run it**
+
+```bash
+python scripts/export_serving_models.py            # models/serving/ (already committed)
+cd app && flutter build web && cd ..               # optional: the API serves the web app at /
+uvicorn spacecraft_ai.api.app:app --app-dir src --port 8000
+open http://localhost:8000
+```
+
+To run the app natively against the same API:
+
+```bash
+cd app && flutter run -d macos --dart-define=API_BASE=http://localhost:8000
+```
+
+On the Android emulator use `http://10.0.2.2:8000`. Tests: `pytest tests/` (API) and `cd app && flutter test`.
+
+---
+
 ## Quick start
 
 ```bash
@@ -247,6 +316,7 @@ python scripts/plot_channel.py M-6                 # results/msl/plots/M-6.png
 python scripts/build_mars_dataset.py               # NASA SPICE kernels (~45 MB) -> Mars CSVs
 python scripts/train_phase_classifier.py           # results/phases/
 python scripts/run_fault_injection.py              # results/faults/ (~45 min on a laptop CPU)
+uvicorn spacecraft_ai.api.app:app --app-dir src    # API + web app on :8000 (module 4)
 ```
 
 ## Project layout
@@ -267,6 +337,12 @@ src/spacecraft_ai/
   faults/           # module 3
     inject.py       #   six documented sensor-fault types
     experiment.py   #   cross-mission phase-aware vs phase-blind vs baseline comparison
+  api/              # module 4
+    engine.py       #   loads serving models, runs replays with injected faults
+    app.py          #   FastAPI endpoints (+ serves the Flutter web build)
+app/                # Flutter dashboard (lib/screens: overview, landing replay, telemetry)
+models/serving/     # exported phase classifier + LSTMs used by the API
+tests/              # API tests
 scripts/            # command-line entry points
 results/            # metrics, per-channel results, plots, trained models (.pt)
 data/               # downloaded data (git-ignored)

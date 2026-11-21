@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "spacecraft-ai",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["spacecraft_ai.api.app:app", "--app-dir", "src", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

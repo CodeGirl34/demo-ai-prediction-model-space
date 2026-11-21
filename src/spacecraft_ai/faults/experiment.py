@@ -37,12 +37,16 @@ COMBINED = {
 }
 ALL_DETECTORS = DETECTORS + list(COMBINED)
 
+# Pin the original PyTorch-default initialisation if the engine offers a Keras-style option,
+# so module-3 results stay reproducible regardless of engine defaults.
+_PIN = {"keras_compat": False} if "keras_compat" in Config.__dataclass_fields__ else {}
 CFG = Config(
     l_s=60,                       # 6 s of history at 10 Hz
     n_predictions=5,
     epochs=25, patience=6,
     error_buffer=30,              # 3 s padding around detections
     smoothing_perc=10 / (70 * 30),  # EWMA span ~10 samples = 1 s (original 105 assumed slow telemetry)
+    **_PIN,
 )
 
 
@@ -84,6 +88,28 @@ def predicted_phases(model, df: pd.DataFrame) -> np.ndarray:
     return pclf.monotonic_decode(model.predict_proba(feats[pclf.FEATURES]))
 
 
+def run_detectors(df: pd.DataFrame, ch: str, phase_model, scaler: Scaler, models: dict,
+                  detectors: list[str] | None = None) -> dict:
+    """Phase classification + every detector on one landing (shared by the experiment and the API)."""
+    detectors = detectors or DETECTORS
+    df = pclf.add_features(df)
+    phases = predicted_phases(phase_model, df)
+    out = {"_phases": phases}
+    for det in detectors:
+        arr = matrix(df, ch, scaler, phases if det == "lstm_phase_aware" else None)
+        X, y = adata.make_windows(arr, CFG.l_s, CFG.n_predictions)
+        if det == "persistence":
+            y_hat = arr[CFG.l_s - 1: CFG.l_s - 1 + len(y), 0]
+        else:
+            y_hat = amodel.predict(models[(ch, det)], X)
+        res = threshold.detect(y[:, 0], y_hat, CFG)
+        out[det] = {"sequences": res.sequences, "e_s": res.e_s, "y": y[:, 0], "y_hat": y_hat}
+    for name, (a, b) in COMBINED.items():
+        if a in out and b in out:
+            out[name] = {"sequences": merge_sequences(out[a]["sequences"] + out[b]["sequences"])}
+    return out
+
+
 class Experiment:
     def __init__(self, train_df: pd.DataFrame, test_df: pd.DataFrame, seed: int = 0, threads: int = 2):
         torch.set_num_threads(threads)
@@ -104,21 +130,7 @@ class Experiment:
 
     def detect(self, df: pd.DataFrame, ch: str) -> dict:
         """Run all detectors on one (possibly faulty) landing. Returns detector -> result."""
-        df = pclf.add_features(df)
-        phases = predicted_phases(self.phase_model, df)
-        out = {"_phases": phases}
-        for det in DETECTORS:
-            arr = matrix(df, ch, self.scaler, phases if det == "lstm_phase_aware" else None)
-            X, y = adata.make_windows(arr, CFG.l_s, CFG.n_predictions)
-            if det == "persistence":
-                y_hat = arr[CFG.l_s - 1: CFG.l_s - 1 + len(y), 0]
-            else:
-                y_hat = amodel.predict(self.models[(ch, det)], X)
-            res = threshold.detect(y[:, 0], y_hat, CFG)
-            out[det] = {"sequences": res.sequences, "e_s": res.e_s, "y": y[:, 0], "y_hat": y_hat}
-        for name, (a, b) in COMBINED.items():
-            out[name] = {"sequences": merge_sequences(out[a]["sequences"] + out[b]["sequences"])}
-        return out
+        return run_detectors(df, ch, self.phase_model, self.scaler, self.models)
 
     def false_alarms_on_clean(self) -> dict:
         rows = []

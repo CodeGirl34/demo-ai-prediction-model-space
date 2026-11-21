@@ -11,3 +11,5 @@ data/
 *.egg-info/
 results/*/predictions/
 .venv/
+# 5-model ensembles: 51 MB of weights each, regenerate with scripts/run_anomaly_engine.py --seeds 5
+results/msl_ensemble5*/models/

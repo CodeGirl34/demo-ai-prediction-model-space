@@ -22,6 +22,27 @@ class LSTMForecaster(nn.Module):
         self.lstm2 = nn.LSTM(h1, h2, batch_first=True)
         self.drop2 = nn.Dropout(cfg.dropout)
         self.head = nn.Linear(h2, cfg.n_predictions)
+        if cfg.keras_compat:
+            self._keras_init()
+
+    def _keras_init(self):
+        """Match the Keras defaults used by the original Telemanom model.
+
+        Glorot-uniform input weights, orthogonal recurrent weights, zero biases
+        except the forget gate (= 1). The forget-gate bias makes it easy for the
+        LSTM to carry the latest value forward, which matters when test
+        telemetry moves outside the range seen in training.
+        """
+        for lstm in (self.lstm1, self.lstm2):
+            h = lstm.hidden_size
+            nn.init.xavier_uniform_(lstm.weight_ih_l0)
+            nn.init.orthogonal_(lstm.weight_hh_l0)
+            nn.init.zeros_(lstm.bias_ih_l0)
+            nn.init.zeros_(lstm.bias_hh_l0)
+            with torch.no_grad():
+                lstm.bias_ih_l0[h:2 * h] = 1.0      # PyTorch gate order: input, forget, cell, output
+        nn.init.xavier_uniform_(self.head.weight)
+        nn.init.zeros_(self.head.bias)
 
     def forward(self, x):
         x, _ = self.lstm1(x)
@@ -36,9 +57,9 @@ def train(X: np.ndarray, y: np.ndarray, cfg: Config, verbose: bool = False) -> t
     rng = np.random.default_rng(cfg.seed)
     device = pick_device()
 
-    # Keras-style validation split: last fraction of (shuffled) windows
-    perm = rng.permutation(len(X))
+    # Random validation split: the original shuffles the windows before Keras takes the last 20 %.
     n_val = max(1, int(len(X) * cfg.validation_split))
+    perm = rng.permutation(len(X))
     val_idx, tr_idx = perm[:n_val], perm[n_val:]
     Xt, yt = torch.from_numpy(X), torch.from_numpy(y)
 

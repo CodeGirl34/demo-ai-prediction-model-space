@@ -56,20 +56,43 @@ the 2018 run, so a few channels are being scored against different ground truth.
 
 ### Results — our own trained LSTMs on MSL
 
-Full pipeline (training from scratch on a MacBook Air M3 CPU, ~27 min, single seed):
+Full pipeline, trained from scratch on a MacBook Air M3 CPU. MSL has 36 labeled anomalies over 27
+channels, so one anomaly is worth about 2.8 points of recall.
 
 | | TP | FP | FN | Precision | Recall | F1 | F0.5 |
 |---|---|---|---|---|---|---|---|
-| **This repo (PyTorch, 1 run)** | 20 | 3 | 16 | **0.870** | 0.556 | 0.678 | 0.781 |
+| This repo: 1 model per channel, PyTorch default init (~27 min) | 20 | 3 | 16 | 0.870 | 0.556 | 0.678 | 0.781 |
+| This repo: average of 5 models per channel (~1 h 20 min) | 21 | 2 | 15 | **0.913** | 0.583 | 0.712 | **0.820** |
+| This repo: average of 5 models, Keras-style init — **default** (~1 h 30 min) | 22 | 3 | 14 | 0.880 | **0.611** | **0.721** | 0.809 |
 | Original 2018 Telemanom LSTMs ² | 25 | 1 | 11 | 0.962 | 0.694 | 0.806 | 0.893 |
 
 ² The original models' saved predictions, scored with the same code and the current labels.
+5-model runs use 4 parallel workers.
 
-19 of 27 channels give exactly the same result as the original. The 8 that differ
-(M-2, M-3, P-15, C-2, F-4, D-15, D-16, F-8) differ in both directions. For example, we catch
-M-2, which the original missed. This is expected run-to-run variance of per-channel LSTMs: the
-original was trained once with Keras, and the random initialisation alone moves single channels.
-Next steps to close the gap: train several seeds per channel and average the predictions.
+**What helped.** With one model, 19 of 27 channels gave exactly the original's result. The other 8
+(M-2, M-3, P-15, C-2, F-4, D-15, D-16, F-8) differed in both directions: we caught M-2, which the
+original missed. Two changes target that run-to-run variance:
+
+* **Averaging 5 models per channel** (`--seeds 5`) smooths out unlucky random starts. It caught D-16
+  and removed two false alarms (F-7, F-8).
+* **Keras-style weight initialisation** (`keras_compat=True`, now the default): orthogonal recurrent
+  weights and a forget-gate bias of 1, as in the original Keras model. It helps the LSTM follow values
+  outside its training range; on P-15 the prediction error dropped about 4×. It also caught D-15,
+  F-4 and M-3, but lost M-2 and M-4 and brought back one false alarm.
+
+**Honest reading.** Together the two changes catch 2 more anomalies than one model. Single channels
+still flip between runs, so a difference of one or two detections is within run-to-run noise. The
+original still finds 3 more anomalies with 2 fewer false alarms. No setting was tuned on these test
+labels: tuning on MSL and then scoring MSL would overstate the result. The next step is to choose
+settings on SMAP (a different spacecraft) and score MSL once.
+
+```bash
+python scripts/run_anomaly_engine.py --spacecraft MSL --seeds 5 --workers 4 --out results/msl_ensemble5_kerasinit
+```
+
+Per-channel numbers: [single model](results/msl/channel_results.csv) ·
+[5 models](results/msl_ensemble5/channel_results.csv) ·
+[5 models, Keras init](results/msl_ensemble5_kerasinit/channel_results.csv).
 
 ![P-11: both labeled anomalies detected; the later error spike at ~3250 is correctly not flagged](results/msl/plots/P-11.png)
 

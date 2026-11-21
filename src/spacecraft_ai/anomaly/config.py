@@ -27,6 +27,8 @@ class Config:
     sd_lim: float = 12.0            # max z for threshold search
 
     seed: int = 42
+    keras_compat: bool = True   # Keras-style weight init (forget-gate bias 1, orthogonal recurrent), as in the original
+    n_seeds: int = 1            # ensemble size: models per channel with different random init, predictions averaged
 
     def to_dict(self):
         return asdict(self)

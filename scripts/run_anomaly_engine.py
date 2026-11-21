@@ -2,6 +2,7 @@
 
     python scripts/run_anomaly_engine.py --spacecraft MSL
     python scripts/run_anomaly_engine.py --spacecraft MSL --channels M-6 T-4 --epochs 5   # quick test
+    python scripts/run_anomaly_engine.py --spacecraft MSL --seeds 5 --workers 4 --out results/msl_ensemble5
 """
 import sys
 from pathlib import Path
@@ -24,11 +25,14 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--seeds", type=int, default=1, help="models per channel (ensemble)")
+    ap.add_argument("--workers", type=int, default=1, help="channels trained in parallel")
     a = ap.parse_args()
 
     cfg = Config()
     if a.epochs:
         cfg.epochs = a.epochs
+    cfg.n_seeds = a.seeds
     out = a.out or ROOT / "results" / a.spacecraft.lower()
-    _, summary = run(a.spacecraft, cfg, DEFAULT_ROOT, out, a.channels, a.verbose)
+    _, summary = run(a.spacecraft, cfg, DEFAULT_ROOT, out, a.channels, a.verbose, a.workers)
     print(json.dumps({k: v for k, v in summary.items() if k != "config"}, indent=2))

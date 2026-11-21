@@ -1,0 +1,35 @@
+{
+  "tuned_on": "SMAP",
+  "predictions": "results/smap_ensemble5_kerasinit",
+  "rule": "max F1, then max F0.5, then fewest changes from the original settings",
+  "settings": {
+    "p": 0.08,
+    "error_buffer": 100,
+    "smoothing_perc": 0.05,
+    "window_size": 30
+  },
+  "original_settings": {
+    "p": 0.13,
+    "error_buffer": 100,
+    "smoothing_perc": 0.05,
+    "window_size": 30
+  },
+  "smap_tuned": {
+    "tp": 62,
+    "fp": 16,
+    "fn": 7,
+    "precision": 0.7949,
+    "recall": 0.8986,
+    "f1": 0.8435,
+    "f0.5": 0.8136
+  },
+  "smap_original": {
+    "tp": 57,
+    "fp": 13,
+    "fn": 12,
+    "precision": 0.8143,
+    "recall": 0.8261,
+    "f1": 0.8201,
+    "f0.5": 0.8166
+  }
+}

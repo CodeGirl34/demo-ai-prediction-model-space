@@ -83,8 +83,8 @@ original missed. Two changes target that run-to-run variance:
 **Honest reading.** Together the two changes catch 2 more anomalies than one model. Single channels
 still flip between runs, so a difference of one or two detections is within run-to-run noise. The
 original still finds 3 more anomalies with 2 fewer false alarms. No setting was tuned on these test
-labels: tuning on MSL and then scoring MSL would overstate the result. The next step is to choose
-settings on SMAP (a different spacecraft) and score MSL once.
+labels: tuning on MSL and then scoring MSL would overstate the result. Settings were instead chosen
+on SMAP, a different spacecraft, and MSL was scored once (below).
 
 ```bash
 python scripts/run_anomaly_engine.py --spacecraft MSL --seeds 5 --workers 4 --out results/msl_ensemble5_kerasinit
@@ -98,6 +98,58 @@ Per-channel numbers: [single model](results/msl/channel_results.csv) ·
 
 More plots: [M-6](results/msl/plots/M-6.png) · [F-7](results/msl/plots/F-7.png) · per-channel
 numbers in [`results/msl/channel_results.csv`](results/msl/channel_results.csv).
+
+### Results — SMAP, and settings tuned on SMAP, tested once on MSL
+
+**SMAP**: 55 channels with 69 labeled anomalies, so one anomaly is worth about 1.4 points of recall.
+It uses the same pipeline as the MSL default (5 models per channel, Keras-style init) and took about
+2 h 40 min with 6 parallel workers.
+
+| SMAP | TP | FP | FN | Precision | Recall | F1 | F0.5 |
+|---|---|---|---|---|---|---|---|
+| This repo: 5 models, Keras-style init | 57 | 13 | 12 | 0.814 | 0.826 | 0.820 | 0.817 |
+| Original 2018 Telemanom LSTMs ² | 62 | 12 | 7 | 0.838 | 0.899 | 0.867 | 0.849 |
+
+As on MSL, our LSTMs find fewer anomalies than the original (5 fewer), with about as many false
+alarms (1 more).
+
+**Tuning on one spacecraft, testing on the other** ([`tune_detection.py`](scripts/tune_detection.py)).
+The LSTM predictions stay fixed. Only the four dynamic-threshold settings change:
+* pruning `p`
+* `error_buffer`
+* `smoothing_perc`
+* `window_size`
+
+That gives 216 combinations, and each list includes the original value. The rule was fixed before
+any result was seen: the highest F1 on SMAP, ties going to the higher F0.5, then to fewer changes.
+MSL was then scored once with the chosen settings.
+
+The search changed one setting: pruning `p` went from 0.13 to 0.08, so weaker detections survive.
+
+| | TP | FP | FN | Precision | Recall | F1 | F0.5 |
+|---|---|---|---|---|---|---|---|
+| SMAP, original settings | 57 | 13 | 12 | 0.814 | 0.826 | 0.820 | 0.817 |
+| SMAP, tuned (chosen here) | 62 | 16 | 7 | 0.795 | 0.899 | 0.844 | 0.814 |
+| **MSL, original settings** | 22 | 3 | 14 | 0.880 | 0.611 | **0.721** | **0.809** |
+| **MSL, tuned on SMAP (scored once)** | 23 | 5 | 13 | 0.821 | 0.639 | 0.719 | 0.777 |
+
+**Honest reading.** On SMAP, where the settings were chosen, they look better: 5 more anomalies for
+3 more false alarms. On MSL, which the search never saw, the gain does not carry over: 1 more anomaly
+for 2 more false alarms, so F1 stays the same and F0.5 drops. The new catch is M-4; both new false
+alarms are on T-4 ([per channel](results/tuning/msl_test_channels.csv)). A gain that only shows on the data it
+was tuned on is not a real gain, so the original Telemanom settings stay the default. The threshold
+code gives the original 2018 results when fed the original predictions (see the validation above),
+so the remaining gap comes from our LSTMs, not from the threshold settings.
+
+```bash
+python scripts/run_anomaly_engine.py --spacecraft SMAP --seeds 5 --workers 6 --no-models --out results/smap_ensemble5_kerasinit
+python scripts/tune_detection.py tune --preds results/smap_ensemble5_kerasinit --spacecraft SMAP
+python scripts/tune_detection.py test --preds results/msl_ensemble5_kerasinit --spacecraft MSL   # run once
+```
+
+Files: [SMAP per channel](results/smap_ensemble5_kerasinit/channel_results.csv) ·
+[all 216 settings on SMAP](results/tuning/smap_grid.csv) · [chosen settings](results/tuning/chosen.json) ·
+[MSL test](results/tuning/msl_test.json).
 
 ---
 

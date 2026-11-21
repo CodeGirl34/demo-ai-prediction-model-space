@@ -263,6 +263,8 @@ raises alarms when an injected sensor fault appears.
 
 ![Landing replay: Curiosity, models trained on Perseverance](docs/screenshots/landing_replay.jpg)
 
+![Landing replay in 3D: Curiosity's sky crane two seconds before touchdown](docs/screenshots/landing_edl.jpg)
+
 ![Journey: Perseverance's real Earth to Mars cruise in 3D](docs/screenshots/journey.jpg)
 
 | Overview | Telemetry (module 1) | Phone layout |
@@ -288,6 +290,30 @@ raises alarms when an injected sensor fault appears.
   * the sensor trace with fault and alarm bands
   * the LSTM anomaly score
   * an alert feed that says whether each alarm matches an injected fault or is a false alarm
+  * **the spacecraft in 3D, phase by phase**: the steps of NASA's entry, descent and landing
+    sequence, from cruise stage separation to the sky crane flying away. The steps come from NASA's
+    overview "Mars Entry, Descent, and Landing" (Moon to Mars Architecture, 2025), following the
+    Mars 2020 sequence. The model changes as the landing plays:
+    * the heat shield glows during entry
+    * the parachute opens
+    * the heat shield and back shell fall away
+    * eight engine plumes fire during powered descent
+    * radar beams and, for Perseverance only, the terrain-relative navigation camera
+    * the rover is lowered on 7.5 m cables and the descent stage flies off
+
+    A phase bar shows approach, entry, descent and landing. You can tap any step to jump the replay to it.
+    Each step is tagged with where its time comes from:
+    * `NASA DATA`: from NASA's reconstructed trajectory. These are entry, peak deceleration,
+      parachute, heat shield, back shell, rover separation and touchdown.
+    * `APPROX.`: placed by a stated rule because the trajectory does not record it. These are
+      cruise stage separation (10 min before entry), guided entry (first 0.2 g), radar lock,
+      terrain-relative navigation (about 4.2 km), powered descent (1 s after back shell separation)
+      and the flyaway.
+    * `ESTIMATE`: computed from the data. Peak heating uses the Sutton–Graves relation
+      (q ∝ ρ^0.5 v³, Mars scale height 11.1 km).
+
+    Shapes are simplified, and the parachute is drawn smaller than the real 21.5 m canopy.
+    This view is also plain `CustomPainter` (`app/lib/edl3d.dart`).
 * **Telemetry**: the 27 NASA MSL channels from module 1, with the expert-labeled and detected
   anomaly windows over the LSTM prediction.
 

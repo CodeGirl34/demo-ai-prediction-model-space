@@ -190,7 +190,7 @@ class _HowToRead extends StatelessWidget {
           step('1', 'Overview', 'You are here. The scores below sum up how well the AI works.'),
           step('2', 'Journey', 'Fly along with Perseverance from Earth to Mars in 3D, on NASA’s real path.'),
           step('3', 'Landing replay',
-              'Watch a real Mars landing second by second. Break a sensor on purpose and see if the AI raises an alarm.'),
+              'Watch a real Mars landing in 3D, step by step. Break a sensor on purpose and see if the AI raises an alarm.'),
           step('4', 'Telemetry',
               'Real data from the Curiosity rover. Red marks = problems NASA engineers found; green = what the AI found.'),
         ]),

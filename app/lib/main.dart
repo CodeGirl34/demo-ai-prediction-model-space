@@ -43,7 +43,7 @@ const _workspaces = [
       'Perseverance’s real 7-month trip from Earth to Mars in 3D, from NASA’s tracking data. Press play and drag to look around.',
       [Evidence.nasa]),
   _Workspace('Landing replay', Icons.flight_land_outlined,
-      'Replay a real Mars landing, break a sensor on purpose, and watch whether the AI notices.',
+      'Replay a real Mars landing in 3D, step by step: entry, descent, landing. Break a sensor on purpose and watch whether the AI notices.',
       [Evidence.nasa, Evidence.ai, Evidence.simulated]),
   _Workspace('Telemetry', Icons.satellite_alt_outlined,
       'Real Curiosity rover telemetry. Did the AI find the anomalies NASA engineers labeled?',
@@ -93,7 +93,7 @@ class _HomeShellState extends State<HomeShell> {
       OverviewScreen(api: widget.api, onOpenReplay: () => _go(2), onOpenJourney: () => _go(1)),
       // animation only runs while this workspace is on screen
       TickerMode(enabled: tab == 1, child: JourneyScreen(api: widget.api)),
-      ReplayScreen(api: widget.api),
+      TickerMode(enabled: tab == 2, child: ReplayScreen(api: widget.api)),
       TelemetryScreen(api: widget.api),
     ];
     final wide = MediaQuery.sizeOf(context).width >= 1024;

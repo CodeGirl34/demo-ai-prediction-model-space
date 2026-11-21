@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'edl_card.dart';
 
 const _faultKinds = ['spike', 'bias', 'drift', 'stuck', 'noise', 'dropout'];
 const _phases = ['approach', 'entry', 'parachute', 'powered_descent', 'sky_crane'];
@@ -104,6 +105,24 @@ class _ReplayScreenState extends State<ReplayScreen> {
       if (cursor >= t.length - 1) _pause();
     });
     setState(() => playing = true);
+  }
+
+  /// Jump to the first sample at or after [ts] (seconds to touchdown), e.g. from the EDL step list,
+  /// so the step that was tapped is the one on screen.
+  void _seekTo(double ts) {
+    if (t.isEmpty) return;
+    _pause();
+    int best = t.length - 1;
+    for (int k = 0; k < t.length; k++) {
+      if (t[k] >= ts - 1e-6) {
+        best = k;
+        break;
+      }
+    }
+    setState(() {
+      cursor = best;
+      _cursorF = best.toDouble();
+    });
   }
 
   void _pause() {
@@ -299,6 +318,15 @@ class _ReplayScreenState extends State<ReplayScreen> {
     ];
 
     final feed = _feed(seen, injected, now);
+    final edl = EdlCard(
+      api: widget.api,
+      mission: data!['mission'] as String,
+      now: now,
+      playing: playing,
+      speed: speed.toDouble(),
+      onSeek: _seekTo,
+      compact: !wide,
+    );
     final content = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _status(i, active),
       const SizedBox(height: 12),
@@ -306,9 +334,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(flex: 3, child: Column(children: [for (final c in charts) ...[c, const SizedBox(height: 12)]])),
           const SizedBox(width: 12),
-          Expanded(flex: 2, child: feed),
+          Expanded(flex: 2, child: Column(children: [edl, const SizedBox(height: 12), feed])),
         ])
       else ...[
+        edl,
+        const SizedBox(height: 12),
         for (final c in charts) ...[c, const SizedBox(height: 12)],
         feed,
       ],

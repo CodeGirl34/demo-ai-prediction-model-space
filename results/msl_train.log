@@ -1,0 +1,38 @@
+[ 1/27] M-6    TP=1 FP=0 FN=0  epochs=16  23.5s
+[ 2/27] M-1    TP=0 FP=0 FN=1  epochs=35  75.2s
+[ 3/27] M-2    TP=1 FP=0 FN=0  epochs=35  73.2s
+[ 4/27] S-2    TP=1 FP=0 FN=0  epochs=18  13.8s
+[ 5/27] P-10   TP=1 FP=0 FN=0  epochs=12  55.5s
+[ 6/27] T-4    TP=0 FP=0 FN=1  epochs=35  76.1s
+[ 7/27] T-5    TP=1 FP=0 FN=0  epochs=13  28.4s
+[ 8/27] F-7    TP=2 FP=1 FN=1  epochs=35  85.0s
+[ 9/27] M-3    TP=0 FP=0 FN=1  epochs=35  66.6s
+[10/27] M-4    TP=1 FP=0 FN=0  epochs=34  66.1s
+[11/27] M-5    TP=1 FP=0 FN=0  epochs=35  68.5s
+[12/27] P-15   TP=0 FP=0 FN=1  epochs=16  59.1s
+[13/27] C-1    TP=1 FP=0 FN=1  epochs=35  73.9s
+[14/27] C-2    TP=0 FP=0 FN=2  epochs=24  14.2s
+[15/27] T-12   TP=1 FP=0 FN=0  epochs=35  35.2s
+[16/27] T-13   TP=0 FP=0 FN=2  epochs=22  22.4s
+[17/27] F-4    TP=0 FP=1 FN=1  epochs=35  83.7s
+[18/27] F-5    TP=1 FP=0 FN=0  epochs=35  89.0s
+[19/27] D-14   TP=1 FP=0 FN=1  epochs=13  48.7s
+[20/27] T-9    TP=0 FP=0 FN=2  epochs=23  5.5s
+[21/27] P-14   TP=1 FP=0 FN=0  epochs=13  50.8s
+[22/27] T-8    TP=2 FP=0 FN=0  epochs=18  12.2s
+[23/27] P-11   TP=2 FP=0 FN=0  epochs=35  155.0s
+[24/27] D-15   TP=0 FP=0 FN=1  epochs=35  73.6s
+[25/27] D-16   TP=0 FP=0 FN=1  epochs=35  46.6s
+[26/27] M-7    TP=1 FP=0 FN=0  epochs=16  23.4s
+[27/27] F-8    TP=1 FP=1 FN=0  epochs=35  114.3s
+{
+  "tp": 20,
+  "fp": 3,
+  "fn": 16,
+  "precision": 0.8695652173913043,
+  "recall": 0.5555555555555556,
+  "f1": 0.6779661016949152,
+  "f0.5": 0.78125,
+  "spacecraft": "MSL",
+  "channels": 27
+}

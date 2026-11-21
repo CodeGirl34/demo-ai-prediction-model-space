@@ -5,3 +5,9 @@ venv/
 .env
 .ipynb_checkpoints/
 .DS_Store
+
+# data and trained models (downloaded / regenerated)
+data/
+*.egg-info/
+results/*/predictions/
+.venv/

@@ -1,0 +1,33 @@
+{
+  "tp": 20,
+  "fp": 3,
+  "fn": 16,
+  "precision": 0.8695652173913043,
+  "recall": 0.5555555555555556,
+  "f1": 0.6779661016949152,
+  "f0.5": 0.78125,
+  "spacecraft": "MSL",
+  "channels": 27,
+  "config": {
+    "l_s": 250,
+    "n_predictions": 10,
+    "hidden_sizes": [
+      80,
+      80
+    ],
+    "dropout": 0.3,
+    "epochs": 35,
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "validation_split": 0.2,
+    "patience": 10,
+    "min_delta": 0.0003,
+    "error_batch_size": 70,
+    "window_size": 30,
+    "smoothing_perc": 0.05,
+    "error_buffer": 100,
+    "p": 0.13,
+    "sd_lim": 12.0,
+    "seed": 42
+  }
+}

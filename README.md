@@ -1,8 +1,8 @@
 # Demo AI Prediction Model Space
 
 **Phase-aware spacecraft anomaly detection** — an AI system that learns how a spacecraft
-normally behaves, flags abnormal changes, and (next) understands which mission phase it is in:
-Earth → Mars cruise or entry, descent & landing.
+normally behaves, flags abnormal changes, and understands which mission phase it is in:
+Earth → Mars cruise, or the stages of entry, descent & landing.
 
 ```
 Mars 2020 trajectory ──► Phase classifier ──┐
@@ -13,7 +13,7 @@ MSL / SMAP telemetry ───────────────────�
 | Module | Data | Status |
 |---|---|---|
 | **1. Anomaly engine** | NASA SMAP & MSL telemetry with expert-labeled anomalies | ✅ implemented, validated |
-| 2. Mission phase classifier | Mars 2020 (Perseverance) reconstructed trajectory from NASA SPICE | planned |
+| **2. Mission phase classifier** | Perseverance + Curiosity reconstructed trajectories from NASA SPICE | ✅ implemented, cross-mission tested |
 | 3. Synthetic fault injection | Faults inserted into the trajectory → labeled test data | planned |
 | 4. API + mobile app | FastAPI backend, Flutter dashboard | planned |
 
@@ -78,6 +78,77 @@ numbers in [`results/msl/channel_results.csv`](results/msl/channel_results.csv).
 
 ---
 
+## Module 2 — Mission phase classifier (Mars entry, descent & landing)
+
+Knows *where in the mission* the spacecraft is, so the anomaly engine can judge readings
+against what is normal for that phase (10 g of braking is normal during entry, an emergency in cruise).
+
+### Data: two real Mars landings from NASA SPICE
+
+`scripts/build_mars_dataset.py` downloads NASA NAIF kernels and samples them into CSVs:
+
+| File | Rows | What |
+|---|---|---|
+| `m2020_edl.csv` | 9,588 | Perseverance landing, 18 Feb 2021, 10 Hz, labeled phases |
+| `msl_edl.csv` | 9,716 | Curiosity landing, 6 Aug 2012, 10 Hz, labeled phases |
+| `m2020_cruise.csv` | 29,279 | Perseverance Earth → Mars cruise, every 10 min (Sun/Earth/Mars-relative) |
+| `events.csv` | 12 | As-flown event times used for the labels |
+
+The landing trajectories are NASA's final reconstructions from each rover's **descent IMU**,
+integrated back from the known touchdown point. Columns include altitude above the landing
+site, Mars-relative speed, vertical speed, flight-path angle and **sensed acceleration**
+(non-gravitational: drag, parachute, rocket thrust). The cruise file starts ~1 h after launch,
+so launch itself is not covered.
+
+**Phases** — the same five for both rovers:
+
+| Phase | Starts at | Perseverance alt / speed | Curiosity alt / speed |
+|---|---|---|---|
+| approach | start of EDL data (cruise stage already gone) | 1,422 km | 1,655 km |
+| entry | entry interface (radius 3,522.2 km) | 130 km / 5,333 m/s | 131 km / 5,845 m/s |
+| parachute | parachute deploy | 12.6 km / 434 m/s | 12.1 km / 406 m/s |
+| powered_descent | backshell separation | 2.16 km / 81 m/s | 1.67 km / 79 m/s |
+| sky_crane | rover separation | 20 m | 21 m |
+
+**Where the event times come from** (details and arithmetic in
+[`events.py`](src/spacecraft_ai/phases/events.py)):
+* Perseverance — event table in Karlgaard et al., *MEDLI2 Trajectory, Aerodynamics and
+  Atmosphere Reconstruction* ([NTRS 20210024320](https://ntrs.nasa.gov/api/citations/20210024320/downloads/MEADSreconstruction.pdf)),
+  anchored on the official touchdown time in the NAIF kernel. Check: the trajectory sits at the
+  paper's entry-interface radius (3,522.2 km) to within 10 m at the paper's entry time.
+* Curiosity — NASA's as-flown landing timeline; backshell separation (missing from that
+  table) computed from the as-flown flight-computer mode durations in Way et al., AAS 13-420
+  ([NTRS 20130011617](https://ntrs.nasa.gov/api/citations/20130011617/downloads/20130011617.pdf)).
+  Check: the same mode table reproduces NASA's heat-shield, rover-separation and touchdown
+  times to within 0.06 s.
+
+### Model
+
+Gradient-boosted trees on 9 physical features (altitude, speed, vertical speed, flight-path
+angle, sensed acceleration and 2-second *past-only* rolling statistics) — nothing a clock or a
+mission name could leak, and everything available in real time. A forward-only decoder
+(phases never go backwards) is applied on top as a safety net.
+
+### Results — trained on one rover, tested on the *other*
+
+A random train/test split on one trajectory would be meaningless (neighbouring samples are
+nearly identical), so the test is a different spacecraft and a different landing:
+
+| Train → Test | Accuracy | Macro F1 | Phase-start timing error (entry / parachute / powered descent / sky crane) |
+|---|---|---|---|
+| Perseverance → **Curiosity** | **0.956** | 0.943 | +22.1 s / −13.4 s / −6.2 s / +0.8 s |
+| Curiosity → **Perseverance** | **0.984** | 0.963 | −0.6 s / +8.3 s / +6.1 s / −0.7 s |
+
+![Phase classifier trained on Perseverance, tested on Curiosity](results/phases/train_m2020_test_msl.png)
+
+The model produces exactly four clean phase changes on both landings, with no flickering. The
+largest error, calling Curiosity's *entry* 22 s late, is physical, not random: entry interface
+is a geometric marker at ~125 km, and drag only becomes noticeable ~20 s later. With only two
+landings (both of the same sky-crane design) this shows the idea transfers; it is not a
+general guarantee for other spacecraft.
+
+---
+
 ## Quick start
 
 ```bash
@@ -89,6 +160,10 @@ python scripts/download_data.py                    # NASA SMAP/MSL from Kaggle (
 python scripts/validate_threshold.py MSL           # check thresholding vs. original
 python scripts/run_anomaly_engine.py --spacecraft MSL
 python scripts/plot_channel.py M-6                 # results/msl/plots/M-6.png
+
+
+python scripts/build_mars_dataset.py               # NASA SPICE kernels (~45 MB) -> Mars CSVs
+python scripts/train_phase_classifier.py           # results/phases/
 ```
 
 ## Project layout
@@ -102,7 +177,10 @@ src/spacecraft_ai/
     threshold.py    #   error smoothing, dynamic threshold, pruning
     metrics.py      #   sequence-level precision / recall / F-scores
     pipeline.py     #   train → predict → detect → evaluate, per channel
-  phases/           # module 2 (planned)
+  phases/           # module 2
+    events.py       #   as-flown EDL event times for both rovers, with sources
+    extract.py      #   NASA SPICE kernels -> cruise / EDL tables
+    classifier.py   #   features, gradient-boosted classifier, forward-only decoding
 scripts/            # command-line entry points
 results/            # metrics, per-channel results, plots, trained models (.pt)
 data/               # downloaded data (git-ignored)
@@ -114,8 +192,9 @@ data/               # downloaded data (git-ignored)
   originally released by NASA JPL with Hundman et al. 2018. MSL = Curiosity rover (27 channels),
   SMAP = Soil Moisture Active Passive satellite (55 channels). Values are scaled and channel
   names anonymized; anomalies were labeled by mission experts from incident reports.
-* **Mars 2020 trajectory** (module 2) — reconstructed cruise and EDL ephemerides from
-  [NASA NAIF SPICE](https://naif.jpl.nasa.gov/pub/naif/pds/pds4/mars2020/mars2020_spice/).
+* **Mars 2020 and MSL trajectories** (module 2) — reconstructed cruise and EDL ephemerides from
+  NASA NAIF SPICE ([Mars 2020](https://naif.jpl.nasa.gov/pub/naif/pds/pds4/mars2020/mars2020_spice/),
+  [MSL](https://naif.jpl.nasa.gov/pub/naif/pds/data/msl-m-spice-6-v1.0/mslsp_1000/)).
   These are navigation reconstructions, not raw sensor data, and contain no labeled anomalies —
   which is why module 3 injects documented synthetic faults for evaluation.
 

@@ -1,0 +1,222 @@
+{
+  "train_m2020_test_msl": {
+    "per_sample": {
+      "accuracy": 0.956257719226019,
+      "macro_f1": 0.9433385004675265,
+      "per_phase_f1": {
+        "approach": 0.98,
+        "entry": 0.926,
+        "parachute": 0.919,
+        "powered_descent": 0.914,
+        "sky_crane": 0.978
+      },
+      "transition_error_s": {
+        "entry": 22.1,
+        "parachute": -13.4,
+        "powered_descent": -6.2,
+        "sky_crane": 0.8
+      },
+      "confusion": [
+        [
+          5400,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          221,
+          2237,
+          134,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1105,
+          62,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          370,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          8,
+          179
+        ]
+      ]
+    },
+    "sequence": {
+      "accuracy": 0.956257719226019,
+      "macro_f1": 0.9433385004675265,
+      "per_phase_f1": {
+        "approach": 0.98,
+        "entry": 0.926,
+        "parachute": 0.919,
+        "powered_descent": 0.914,
+        "sky_crane": 0.978
+      },
+      "transition_error_s": {
+        "entry": 22.1,
+        "parachute": -13.4,
+        "powered_descent": -6.2,
+        "sky_crane": 0.8
+      },
+      "confusion": [
+        [
+          5400,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          221,
+          2237,
+          134,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1105,
+          62,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          370,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          8,
+          179
+        ]
+      ]
+    }
+  },
+  "train_msl_test_m2020": {
+    "per_sample": {
+      "accuracy": 0.9836253650396328,
+      "macro_f1": 0.9632174774554741,
+      "per_phase_f1": {
+        "approach": 0.999,
+        "entry": 0.982,
+        "parachute": 0.938,
+        "powered_descent": 0.918,
+        "sky_crane": 0.979
+      },
+      "transition_error_s": {
+        "entry": -0.6,
+        "parachute": 8.3,
+        "powered_descent": 6.1,
+        "sky_crane": -0.7
+      },
+      "confusion": [
+        [
+          5395,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2406,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          83,
+          1086,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          61,
+          380,
+          7
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          164
+        ]
+      ]
+    },
+    "sequence": {
+      "accuracy": 0.9836253650396328,
+      "macro_f1": 0.9632174774554741,
+      "per_phase_f1": {
+        "approach": 0.999,
+        "entry": 0.982,
+        "parachute": 0.938,
+        "powered_descent": 0.918,
+        "sky_crane": 0.979
+      },
+      "transition_error_s": {
+        "entry": -0.6,
+        "parachute": 8.3,
+        "powered_descent": 6.1,
+        "sky_crane": -0.7
+      },
+      "confusion": [
+        [
+          5395,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2406,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          83,
+          1086,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          61,
+          380,
+          7
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          164
+        ]
+      ]
+    }
+  }
+}

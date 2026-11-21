@@ -7,7 +7,7 @@ name = "spacecraft-ai"
 version = "0.1.0"
 description = "Phase-aware spacecraft anomaly detection (SMAP/MSL telemetry + Mars 2020 trajectory)"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scikit-learn", "torch", "matplotlib"]
+dependencies = ["numpy", "pandas", "scikit-learn", "torch", "matplotlib", "spiceypy"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -14,7 +14,7 @@ MSL / SMAP telemetry ───────────────────�
 |---|---|---|
 | **1. Anomaly engine** | NASA SMAP & MSL telemetry with expert-labeled anomalies | ✅ implemented, validated |
 | **2. Mission phase classifier** | Perseverance + Curiosity reconstructed trajectories from NASA SPICE | ✅ implemented, cross-mission tested |
-| 3. Synthetic fault injection | Faults inserted into the trajectory → labeled test data | planned |
+| **3. Fault injection + phase-aware detection** | Six sensor-fault types injected into both landings | ✅ implemented, cross-mission tested |
 | 4. API + mobile app | FastAPI backend, Flutter dashboard | planned |
 
 ---
@@ -149,6 +149,79 @@ general guarantee for other spacecraft.
 
 ---
 
+## Module 3 — Fault injection and phase-aware anomaly detection
+
+NASA's landing reconstructions are clean, so there is nothing to detect. To *measure* the
+anomaly engine on a landing, we corrupt copies of the data with sensor faults whose type,
+position and size are recorded. Those records are the labels.
+
+**Six fault types** ([`inject.py`](src/spacecraft_ai/faults/inject.py)), injected into the IMU
+**sensed acceleration** or the **vertical speed**. Each is placed in a randomly chosen phase, and
+sized as a fraction of the signal's range (as in the NASA telemetry of module 1):
+
+| Type | What it simulates | Size | Duration |
+|---|---|---|---|
+| spike | transient glitch / bit flip | 10–30 % of range | 0.1–0.5 s |
+| bias | sudden calibration jump | 3–8 % | 3–20 s |
+| drift | slowly growing sensor error | ramps to 5–12 % | 10–30 s |
+| stuck | output frozen at last value | — | 3–15 s |
+| noise | burst of vibration / interference | σ 2–5 % | 3–15 s |
+| dropout | signal reads zero | — | 1–5 s |
+
+Realistic background noise (IMU 0.05 m/s², vertical speed 0.2 m/s) is added to all data.
+
+**Protocol** ([`experiment.py`](src/spacecraft_ai/faults/experiment.py)) — train on the
+*clean* landing of one rover, inject faults into the *other* rover's landing (40 scenarios
+× 2 faults × 2 signals × 2 directions = **320 faults per detector**). Three detectors share
+the module-1 dynamic threshold:
+
+* **persistence baseline:** predicts "the next reading equals the last one".
+* **LSTM phase-blind:** the module-1 forecaster, inputs = the sensor signals.
+* **LSTM phase-aware:** the same, plus the current phase as one-hot inputs (like the command
+  flags in the MSL telemetry). The phase is **never taken from the labels**: it is what the
+  module-2 classifier predicts from the faulty data at that moment.
+
+### Results
+
+| Detector | Faults caught | False alarms (faulty runs) | False alarms on clean landings | Precision | F1 |
+|---|---|---|---|---|---|
+| persistence baseline | 115 / 320 (36 %) | 76 | 2 | 0.60 | 0.45 |
+| LSTM phase-blind | 143 / 320 (45 %) | 265 | 7 | 0.35 | 0.39 |
+| **LSTM phase-aware** | 141 / 320 (44 %) | **187** | **5** | 0.43 | 0.44 |
+
+Fraction of faults caught, by type:
+
+| | spike | bias | drift | stuck | noise | dropout |
+|---|---|---|---|---|---|---|
+| persistence baseline | **0.93** | 0.02 | 0.04 | 0.04 | **0.94** | 0.19 |
+| LSTM phase-blind | 0.74 | 0.56 | **0.53** | 0.08 | 0.53 | 0.23 |
+| LSTM phase-aware | 0.67 | **0.60** | 0.51 | 0.08 | 0.55 | 0.23 |
+
+**What this shows**
+
+1. **Knowing the phase cuts false alarms by ~30 %** (265 → 187) while catching the same
+   number of faults. On clean landings the phase-blind model mistakes normal entry braking for
+   a fault 6 times; the phase-aware one 3 times. This is the effect the whole design is built on.
+   It comes from one training run per model on two landings, so treat it as an encouraging
+   result, not a precise figure.
+2. **The two detector families are complementary.** Prediction models catch slow faults
+   (bias, drift) that the "same as last reading" baseline almost never sees, and the baseline is
+   far better at sudden spikes and noise bursts. Flagging a fault when *either* the baseline or the
+   phase-aware LSTM fires catches **55 %** of all faults (vs. 44 % / 36 % alone).
+3. **Hard cases.** A *stuck* sensor (8 %) or a *dropout* to zero (23 %) is nearly invisible
+   when the true value is already flat or near zero: in the sky-crane hover, vertical speed is
+   −0.75 m/s and acceleration equals gravity. The LSTMs also lose accuracy when Curiosity flies
+   outside the range seen on Perseverance (it entered ~500 m/s faster), which is visible as a
+   higher error floor during approach.
+
+![Vertical-speed faults on Curiosity: only the phase-aware LSTM catches the parachute-phase drift](results/faults/example_m2020_to_msl_vertical_speed_m_s.png)
+
+Next steps: combine the baseline and LSTM detectors properly (and measure the combined false
+alarms), train several seeds, and add physics cross-checks between signals (e.g. altitude rate
+vs. vertical speed) to catch stuck and dropout faults.
+
+---
+
 ## Quick start
 
 ```bash
@@ -161,9 +234,9 @@ python scripts/validate_threshold.py MSL           # check thresholding vs. orig
 python scripts/run_anomaly_engine.py --spacecraft MSL
 python scripts/plot_channel.py M-6                 # results/msl/plots/M-6.png
 
-
 python scripts/build_mars_dataset.py               # NASA SPICE kernels (~45 MB) -> Mars CSVs
 python scripts/train_phase_classifier.py           # results/phases/
+python scripts/run_fault_injection.py              # results/faults/ (~45 min on a laptop CPU)
 ```
 
 ## Project layout
@@ -181,6 +254,9 @@ src/spacecraft_ai/
     events.py       #   as-flown EDL event times for both rovers, with sources
     extract.py      #   NASA SPICE kernels -> cruise / EDL tables
     classifier.py   #   features, gradient-boosted classifier, forward-only decoding
+  faults/           # module 3
+    inject.py       #   six documented sensor-fault types
+    experiment.py   #   cross-mission phase-aware vs phase-blind vs baseline comparison
 scripts/            # command-line entry points
 results/            # metrics, per-channel results, plots, trained models (.pt)
 data/               # downloaded data (git-ignored)
@@ -197,6 +273,8 @@ data/               # downloaded data (git-ignored)
   [MSL](https://naif.jpl.nasa.gov/pub/naif/pds/data/msl-m-spice-6-v1.0/mslsp_1000/)).
   These are navigation reconstructions, not raw sensor data, and contain no labeled anomalies —
   which is why module 3 injects documented synthetic faults for evaluation.
+  Faults are synthetic: they show *how well the engine would catch* these failure modes, not
+  that these faults happened on the real missions.
 
 The two datasets come from different spacecraft and are never merged row-by-row; they share the
 *anomaly engine* and the *app*, not the data.

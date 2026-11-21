@@ -1,0 +1,15 @@
+channel,detector,start,end,phase,direction
+sensed_accel_m_s2,persistence,7979,8039,parachute,Perseverance -> Curiosity
+sensed_accel_m_s2,lstm_phase_blind,5940,6062,entry,Perseverance -> Curiosity
+sensed_accel_m_s2,lstm_phase_blind,6113,6302,entry,Perseverance -> Curiosity
+sensed_accel_m_s2,lstm_phase_blind,7979,8057,parachute,Perseverance -> Curiosity
+sensed_accel_m_s2,lstm_phase_aware,5884,6301,entry,Perseverance -> Curiosity
+sensed_accel_m_s2,lstm_phase_aware,7979,8058,parachute,Perseverance -> Curiosity
+vertical_speed_m_s,lstm_phase_blind,6080,6409,entry,Perseverance -> Curiosity
+vertical_speed_m_s,lstm_phase_aware,6080,6359,entry,Perseverance -> Curiosity
+sensed_accel_m_s2,persistence,7793,7858,entry,Curiosity -> Perseverance
+sensed_accel_m_s2,lstm_phase_blind,5978,6149,entry,Curiosity -> Perseverance
+sensed_accel_m_s2,lstm_phase_blind,7793,7876,entry,Curiosity -> Perseverance
+sensed_accel_m_s2,lstm_phase_aware,7793,7875,entry,Curiosity -> Perseverance
+vertical_speed_m_s,lstm_phase_blind,6234,6569,entry,Curiosity -> Perseverance
+vertical_speed_m_s,lstm_phase_aware,5380,5589,approach,Curiosity -> Perseverance

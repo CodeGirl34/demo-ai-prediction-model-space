@@ -58,6 +58,7 @@ class Api {
   Future<List<dynamic>> telemetryChannels() async => await _get('/api/telemetry/channels');
   Future<Map<String, dynamic>> telemetryChannel(String id) async =>
       await _get('/api/telemetry/channels/$id');
+  Future<Map<String, dynamic>> journey() async => await _get('/api/journey');
 
   Future<Map<String, dynamic>> replay(
     String mission, {

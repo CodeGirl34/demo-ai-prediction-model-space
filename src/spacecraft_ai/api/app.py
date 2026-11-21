@@ -7,7 +7,7 @@ Interactive docs at /docs. If the Flutter web build exists (app/build/web), it i
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -80,6 +80,15 @@ def trajectory(mission: MissionId, step: int = Query(10, ge=1, le=1000)):
 @app.post("/api/missions/{mission}/replay")
 def replay(mission: MissionId, req: ReplayRequest):
     return engine().replay(mission, req.channel, [f.model_dump() for f in req.faults], req.random_faults, req.seed)
+
+
+@app.get("/api/journey")
+def journey():
+    """Perseverance's Earth -> Mars cruise from NASA SPICE (see scripts/export_journey.py)."""
+    path = ROOT / "models" / "serving" / "m2020_journey.json"
+    if not path.exists():
+        raise HTTPException(503, "journey data missing: run scripts/export_journey.py")
+    return Response(path.read_bytes(), media_type="application/json")
 
 
 @app.get("/api/telemetry/channels")

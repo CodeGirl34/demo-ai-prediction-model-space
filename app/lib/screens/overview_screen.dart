@@ -5,9 +5,10 @@ import '../theme.dart';
 import '../widgets.dart';
 
 class OverviewScreen extends StatefulWidget {
-  const OverviewScreen({super.key, required this.api, required this.onOpenReplay});
+  const OverviewScreen({super.key, required this.api, required this.onOpenReplay, required this.onOpenJourney});
   final Api api;
   final VoidCallback onOpenReplay;
+  final VoidCallback onOpenJourney;
 
   @override
   State<OverviewScreen> createState() => _OverviewScreenState();
@@ -66,7 +67,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
           ),
         ),
         const SizedBox(height: 18),
-        _HowToRead(onOpenReplay: widget.onOpenReplay),
+        _HowToRead(onOpenReplay: widget.onOpenReplay, onOpenJourney: widget.onOpenJourney),
         const SizedBox(height: 22),
         _SectionLabel('Results'),
         const SizedBox(height: 10),
@@ -154,13 +155,14 @@ class _SectionLabel extends StatelessWidget {
 
 /// Plain-language guide to the console: what each workspace is for, and what the colours mean.
 class _HowToRead extends StatelessWidget {
-  const _HowToRead({required this.onOpenReplay});
+  const _HowToRead({required this.onOpenReplay, required this.onOpenJourney});
   final VoidCallback onOpenReplay;
+  final VoidCallback onOpenJourney;
 
   @override
   Widget build(BuildContext context) {
     Widget step(String n, String title, String body) => ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
+          constraints: const BoxConstraints(minWidth: 200, maxWidth: 212), // four steps fit on one row
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               width: 24,
@@ -186,9 +188,10 @@ class _HowToRead extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Wrap(spacing: 24, runSpacing: 16, children: [
           step('1', 'Overview', 'You are here. The scores below sum up how well the AI works.'),
-          step('2', 'Landing replay',
+          step('2', 'Journey', 'Fly along with Perseverance from Earth to Mars in 3D, on NASA’s real path.'),
+          step('3', 'Landing replay',
               'Watch a real Mars landing second by second. Break a sensor on purpose and see if the AI raises an alarm.'),
-          step('3', 'Telemetry',
+          step('4', 'Telemetry',
               'Real data from the Curiosity rover. Red marks = problems NASA engineers found; green = what the AI found.'),
         ]),
         const SizedBox(height: 16),
@@ -204,11 +207,18 @@ class _HowToRead extends StatelessWidget {
             ]),
         ]),
         const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: onOpenReplay,
-          icon: const Icon(Icons.play_arrow, size: 18),
-          label: const Text('Start with a landing replay'),
-        ),
+        Wrap(spacing: 10, runSpacing: 10, children: [
+          FilledButton.icon(
+            onPressed: onOpenJourney,
+            icon: const Icon(Icons.public, size: 18),
+            label: const Text('Fly Earth → Mars in 3D'),
+          ),
+          OutlinedButton.icon(
+            onPressed: onOpenReplay,
+            icon: const Icon(Icons.play_arrow, size: 18),
+            label: const Text('Replay a landing'),
+          ),
+        ]),
       ]),
     );
   }

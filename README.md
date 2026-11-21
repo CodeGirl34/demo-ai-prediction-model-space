@@ -240,6 +240,8 @@ raises alarms when an injected sensor fault appears.
 
 ![Landing replay: Curiosity, models trained on Perseverance](docs/screenshots/landing_replay.jpg)
 
+![Journey: Perseverance's real Earth to Mars cruise in 3D](docs/screenshots/journey.jpg)
+
 | Overview | Telemetry (module 1) | Phone layout |
 |---|---|---|
 | ![](docs/screenshots/overview.jpg) | ![](docs/screenshots/telemetry.jpg) | ![](docs/screenshots/phone.jpg) |
@@ -247,6 +249,14 @@ raises alarms when an injected sensor fault appears.
 **Screens**
 
 * **Overview**: headline results of every module, plus the two landings with their event timelines.
+* **Journey**: Perseverance's real Earth → Mars cruise (30 Jul 2020 → 18 Feb 2021) in 3D. It uses NASA's
+  reconstructed trajectory `m2020_cruise_od138_v1.bsp`, sampled every 6 h, with Earth and Mars from
+  DE438s, in a Sun-centred ecliptic frame. You can play it, scrub the timeline, drag to rotate,
+  scroll or pinch to zoom, and follow the ship. Readouts show distance from Earth and to Mars, speed,
+  radio delay and distance travelled. Planets and ship are drawn much larger than real; distances are to scale.
+  The arrival values match NASA's published figures: 11.4 min one-way light time and about 471 million km
+  travelled (NASA: 293 million miles). The 3D view is plain Flutter `CustomPainter`
+  (`app/lib/journey3d.dart`) with no plugins, so it runs on web, iOS and Android.
 * **Landing replay**: pick Curiosity (the test landing) or Perseverance (the training landing) and a
   sensor, then add faults (type + phase) or "surprise me" random ones. Playback at 10× / 30× / 90×
   shows:
@@ -274,6 +284,7 @@ take 2.5 MB in `models/serving/`. A replay request takes about 3 s on a laptop C
 | `GET /api/missions/{msl\|m2020}/trajectory` | altitude, speed, phase over time |
 | `POST /api/missions/{msl\|m2020}/replay` | inject faults → phase estimate, anomaly score, alarms, caught / missed faults |
 | `GET /api/telemetry/channels[/{id}]` | module-1 MSL channel results and series |
+| `GET /api/journey` | Perseverance's Earth → Mars cruise every 6 h: ship, Earth and Mars positions (AU), distances, speed, light time |
 
 Interactive docs: `http://localhost:8000/docs`. Example:
 
@@ -286,6 +297,7 @@ curl -X POST localhost:8000/api/missions/msl/replay -H 'Content-Type: applicatio
 
 ```bash
 python scripts/export_serving_models.py            # models/serving/ (already committed)
+python scripts/export_journey.py                   # models/serving/m2020_journey.json (already committed)
 cd app && flutter build web && cd ..               # optional: the API serves the web app at /
 uvicorn spacecraft_ai.api.app:app --app-dir src --port 8000
 open http://localhost:8000

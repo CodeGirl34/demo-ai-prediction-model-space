@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api.dart';
+import 'screens/journey_screen.dart';
 import 'screens/overview_screen.dart';
 import 'screens/replay_screen.dart';
 import 'screens/telemetry_screen.dart';
@@ -38,6 +39,9 @@ class _Workspace {
 const _workspaces = [
   _Workspace('Overview', Icons.space_dashboard_outlined,
       'The headline results, and the two real Mars landings the AI learned from.', [Evidence.nasa, Evidence.ai]),
+  _Workspace('Journey', Icons.public_outlined,
+      'Perseverance’s real 7-month trip from Earth to Mars in 3D, from NASA’s tracking data. Press play and drag to look around.',
+      [Evidence.nasa]),
   _Workspace('Landing replay', Icons.flight_land_outlined,
       'Replay a real Mars landing, break a sensor on purpose, and watch whether the AI notices.',
       [Evidence.nasa, Evidence.ai, Evidence.simulated]),
@@ -86,7 +90,9 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      OverviewScreen(api: widget.api, onOpenReplay: () => _go(1)),
+      OverviewScreen(api: widget.api, onOpenReplay: () => _go(2), onOpenJourney: () => _go(1)),
+      // animation only runs while this workspace is on screen
+      TickerMode(enabled: tab == 1, child: JourneyScreen(api: widget.api)),
       ReplayScreen(api: widget.api),
       TelemetryScreen(api: widget.api),
     ];
@@ -112,7 +118,7 @@ class _HomeShellState extends State<HomeShell> {
             Expanded(child: ColoredBox(color: kVoid, child: body)),
           ]);
 
-    // Console shortcuts: 1–3 switch workspaces.
+    // Console shortcuts: 1–4 switch workspaces.
     return CallbackShortcuts(
       bindings: {
         for (int i = 0; i < _workspaces.length; i++)
@@ -431,7 +437,7 @@ class _StatusBar extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const KeyHint(combo: '1–3', action: 'workspaces'),
+          const KeyHint(combo: '1–4', action: 'workspaces'),
         ]),
       );
 }

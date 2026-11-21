@@ -73,3 +73,14 @@ def test_telemetry(client):
 def test_summary(client):
     s = client.get("/api/summary").json()
     assert s["fault_detection"]["or_persistence_aware"]["tp"] == 176
+
+
+def test_journey(client):
+    r = client.get("/api/journey")
+    assert r.status_code == 200
+    j = r.json()
+    n = len(j["ship"])
+    assert n > 100 and len(j["earth"]) == len(j["mars"]) == len(j["t_utc"]) == n
+    assert j["dist_earth_km"][0] < 1e5            # starts next to Earth
+    assert j["dist_mars_km"][-1] < 1e5            # ends at Mars
+    assert 4.5e8 < j["total_path_km"] < 5.0e8      # NASA: ~472 million km

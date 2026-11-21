@@ -334,6 +334,9 @@ class EdlScene {
   double altKm = 0, heat = 0, flow = 0, dust = 0;
   V3? shieldApex;
 
+  /// Wind in m/s (x = east, y = north, z = up), for the streaks blowing across the view.
+  V3 wind = V3.zero;
+
   void grow(V3 p) {
     lo = V3(math.min(lo.x, p.x), math.min(lo.y, p.y), math.min(lo.z, p.z));
     hi = V3(math.max(hi.x, p.x), math.max(hi.y, p.y), math.max(hi.z, p.z));
@@ -351,9 +354,11 @@ double _smooth(double x) {
 
 /// Builds the flight system as it is configured at [now] (seconds to touchdown; can run past the
 /// end of the data for the flyaway). [clock] is wall time, for flicker and airflow.
-EdlScene buildEdlScene(EdlTimeline tl, double now, double clock) {
+/// [wind] and [swing] come from a wind gust: [swing] (east, north, in radians) tilts the whole
+/// stack the way the parachute line or the thrust axis leans in the gust.
+EdlScene buildEdlScene(EdlTimeline tl, double now, double clock, {V3 wind = V3.zero, (double, double) swing = (0, 0)}) {
   final m = EdlMeshes.instance;
-  final s = EdlScene();
+  final s = EdlScene()..wind = wind;
   final tE = tl.at('entry'), tPd = tl.at('parachute'), tHs = tl.at('heatshield'), tBs = tl.at('backshell');
   final tRs = tl.at('rover_dep'), tTd = tl.at('touchdown'), tRad = tl.at('radar');
   final tTrn = tl.has('trn') ? tl.at('trn') : null;
@@ -366,9 +371,20 @@ EdlScene buildEdlScene(EdlTimeline tl, double now, double clock) {
   // capsule flies at an angle of attack during entry (lift for steering), upright under the chute
   final tilt = 0.28 * _smooth((now - tE) / 20) * (1 - _smooth((now - tPd) / 3));
   final ct = math.cos(tilt), st = math.sin(tilt);
-  V3 toW(V3 l) {
+  V3 toW0(V3 l) {
     final x = l.z, y = l.y, z = -l.x;
     return V3(x * ct + z * st, y, -x * st + z * ct);
+  }
+
+  // gust swing: rotate about the horizontal axis at right angles to the lean (Rodrigues)
+  final (se, sn) = swing;
+  final ang = math.atan(math.sqrt(se * se + sn * sn));
+  final axis = ang > 1e-4 ? V3(-sn, se, 0).unit : V3.zero;
+  final ca = math.cos(ang), sa = math.sin(ang);
+  V3 toW(V3 l) {
+    final p = toW0(l);
+    if (ang <= 1e-4) return p;
+    return p * ca + axis.cross(p) * sa + axis * (axis.dot(p) * (1 - ca));
   }
 
   void part(List<Poly> mesh, V3 off, {bool focus = true, double glow = 0, V3 Function(V3)? pre}) {
@@ -493,7 +509,7 @@ EdlScene buildEdlScene(EdlTimeline tl, double now, double clock) {
   if (altM < 150 || now >= tTd) {
     var gx = now >= tTd ? roverBottom : math.max(altM, roverBottom);
     if (now < tTd) gx = gx + (roverBottom - gx) * _smooth((now - (tTd - 2)) / 2);
-    s.groundZ = toW(V3(gx, 0, 0)).z;
+    s.groundZ = toW0(V3(gx, 0, 0)).z; // the ground does not swing
     if (gx < 12) s.grow(V3(0, 0, s.groundZ!));
     if (dsOff != null && now >= tBs + 0.5) s.dust = _clamp01(1 - (gx - dsOff.x) / 30); // engines' height above the ground
   }
@@ -523,6 +539,7 @@ class EdlPainter extends CustomPainter {
     _sky(canvas, size, s.altKm);
     if (s.heat > 0.02 && s.shieldApex != null) _plasma(canvas, s);
     if (s.flow > 0.03) _airflow(canvas, s, t, behind: true);
+    if (s.wind.length > 0.5) _windStreaks(canvas, s, t, behind: true);
     if (s.groundZ != null) _ground(canvas, s, t);
 
     final items = <(double, void Function())>[];
@@ -581,6 +598,7 @@ class EdlPainter extends CustomPainter {
       draw();
     }
     if (s.flow > 0.03) _airflow(canvas, s, t, behind: false);
+    if (s.wind.length > 0.5) _windStreaks(canvas, s, t, behind: false);
     for (final (p, text) in s.labels) {
       final (o, d) = cam.project(p);
       if (d <= 0.05) continue;
@@ -655,6 +673,34 @@ class EdlPainter extends CustomPainter {
     }
   }
 
+  /// Gusts: streaks blowing sideways through the view, faster and denser for a stronger wind.
+  void _windStreaks(Canvas canvas, EdlScene s, double t, {required bool behind}) {
+    final w = s.wind, strength = math.min(1.0, w.length / 35);
+    final dir = w.unit;
+    final side = V3(-dir.y, dir.x, 0).unit;
+    final c = s.center;
+    final span = s.radius * 5;
+    final rnd = math.Random(9);
+    final len = s.radius * (0.3 + 0.7 * strength);
+    final n = (10 + 26 * strength).round();
+    for (int k = 0; k < n; k++) {
+      final off = side * ((rnd.nextDouble() - 0.5) * span) + V3(0, 0, (rnd.nextDouble() - 0.5) * span * 0.6);
+      final along = ((t * (6 + 1.2 * w.length) + rnd.nextDouble() * span) % span) - span / 2;
+      final a = c + off + dir * along;
+      final (_, _, dep) = cam.vec(a - cam.target);
+      if ((dep > 0) != behind) continue;
+      final (pa, da) = cam.project(a);
+      final (pb, db) = cam.project(a + dir * len);
+      if (da <= 0.05 || db <= 0.05) continue;
+      canvas.drawLine(
+          pa,
+          pb,
+          Paint()
+            ..color = const Color(0xFFCFE0FF).withValues(alpha: 0.10 + 0.35 * strength)
+            ..strokeWidth = 1.2);
+    }
+  }
+
   void _ground(Canvas canvas, EdlScene s, double t) {
     final z = s.groundZ!;
     Path ring(double r) {
@@ -707,4 +753,45 @@ class EdlPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant EdlPainter old) => true;
+}
+
+
+/// A wind gust's effect along the replay (from the API's `wind` block), sampled at any time.
+class EdlWind {
+  EdlWind(this.t, Map<String, dynamic> w)
+      : e = _list(w['e']),
+        n = _list(w['n']),
+        u = _list(w['u']),
+        driftE = _list(w['drift_e_m']),
+        driftN = _list(w['drift_n_m']),
+        swingE = _list(w['swing_e']),
+        swingN = _list(w['swing_n']);
+
+  final List<double> t, e, n, u, driftE, driftN, swingE, swingN;
+
+  static List<double> _list(dynamic xs) => [for (final v in xs as List) v == null ? 0.0 : (v as num).toDouble()];
+
+  double _at(List<double> ys, double x) {
+    if (x <= t.first) return ys.first;
+    if (x >= t.last) return ys.last;
+    int lo = 0, hi = t.length - 1;
+    while (hi - lo > 1) {
+      final mid = (lo + hi) >> 1;
+      if (t[mid] <= x) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    final f = (x - t[lo]) / (t[hi] - t[lo]);
+    return ys[lo] + (ys[hi] - ys[lo]) * f;
+  }
+
+  /// Wind (m/s, x east, y north, z up).
+  V3 windAt(double x) => x > t.last ? V3.zero : V3(_at(e, x), _at(n, x), _at(u, x));
+
+  /// Sideways distance from NASA's path, metres (east, north). After the data ends it stays put.
+  (double, double) driftAt(double x) => (_at(driftE, x), _at(driftN, x));
+
+  (double, double) swingAt(double x) => x > t.last ? (0, 0) : (_at(swingE, x), _at(swingN, x));
 }

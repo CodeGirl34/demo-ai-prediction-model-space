@@ -68,11 +68,13 @@ class Api {
     List<Map<String, dynamic>> faults = const [],
     int randomFaults = 0,
     int seed = 0,
+    List<Map<String, dynamic>> gusts = const [],
   }) async =>
       await _post('/api/missions/$mission/replay', {
         'channel': channel,
         'faults': faults,
         'random_faults': randomFaults,
         'seed': seed,
+        'gusts': gusts,
       });
 }

@@ -34,6 +34,8 @@ const kDerived = Color(0xFFB9A4F5); // AI output (our models)
 const kDerivedSoft = Color(0xFF221C3A);
 const kScenario = Color(0xFFF59A5F); // simulated (faults we injected)
 const kScenarioSoft = Color(0xFF33200F);
+const kWind = Color(0xFF8EB8FF); // wind gusts we added: a real push, not a broken sensor
+const kWindSoft = Color(0xFF16233A);
 
 // -- Fonts ------------------------------------------------------------------------
 const kFontDisplay = 'ChakraPetch';
@@ -74,6 +76,12 @@ const faultHelp = <String, String>{
   'noise': 'The reading turns jittery for a few seconds, like heavy vibration.',
   'dropout': 'The sensor reads zero. Invisible when the real value is already close to zero.',
 };
+
+const gustLabels = <String, String>{'light': 'Light gust', 'strong': 'Strong gust', 'severe': 'Severe gust'};
+const gustSpeeds = <String, int>{'light': 10, 'strong': 20, 'severe': 35};
+
+/// Compass point the wind blows towards (degrees clockwise from north).
+String compass(num deg) => const ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][((deg % 360) / 45).round() % 8];
 
 String channelUnit(String channel) => channel == 'sensed_accel_m_s2' ? 'm/s²' : 'm/s';
 

@@ -5,12 +5,24 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../edl3d.dart' show EdlWind;
 import '../theme.dart';
 import '../widgets.dart';
 import 'edl_card.dart';
 
 const _faultKinds = ['spike', 'bias', 'drift', 'stuck', 'noise', 'dropout'];
 const _phases = ['approach', 'entry', 'parachute', 'powered_descent', 'sky_crane'];
+const _gustPhases = ['entry', 'parachute', 'powered_descent', 'sky_crane']; // no air in approach
+
+/// What a gust does in each phase, in plain words (from the model in faults/wind.py).
+const _gustHelp = <String, String>{
+  'entry': 'Very fast through thin air: drag is strong, so the capsule is shoved sideways by a few hundred metres.',
+  'parachute': 'The parachute is made to catch air, so it drifts with the wind: usually the biggest push, '
+      'hundreds of metres.',
+  'powered_descent': 'Barely moves it: the descent stage is heavy, the air is thin, and the engines correct '
+      'the push. Expect a few metres.',
+  'sky_crane': 'Barely moves it: near the ground the engines hold the descent stage in place. Expect about a metre.',
+};
 
 class ReplayScreen extends StatefulWidget {
   const ReplayScreen({super.key, required this.api});
@@ -29,6 +41,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
   ];
   int randomFaults = 0;
   int seed = 0;
+  final List<Map<String, String>> gusts = [];
 
   Map<String, dynamic>? data;
   bool loading = false;
@@ -41,7 +54,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
   Timer? _timer;
 
   // decoded series
-  List<double> t = [], alt = [], value = [], healthy = [], score = [];
+  List<double> t = [], alt = [], value = [], healthy = [], nasa = [], score = [], driftH = [];
+  EdlWind? windData;
   List<String> phasePred = [], phaseTrue = [];
 
   @override
@@ -67,13 +81,21 @@ class _ReplayScreenState extends State<ReplayScreen> {
     });
     try {
       final r = await widget.api.replay(mission,
-          channel: channel, faults: faults, randomFaults: randomFaults, seed: seed);
+          channel: channel, faults: faults, randomFaults: randomFaults, seed: seed, gusts: gusts);
       setState(() {
         data = r;
         t = _nums(r['t_s']);
         alt = _nums(r['altitude_km']);
         value = _nums(r['value']);
         healthy = r['value_healthy'] == null ? [] : _nums(r['value_healthy']);
+        nasa = r['value_nasa'] == null ? [] : _nums(r['value_nasa']);
+        windData = r['wind'] == null ? null : EdlWind(t, r['wind'] as Map<String, dynamic>);
+        driftH = windData == null
+            ? []
+            : [
+                for (int k = 0; k < t.length; k++)
+                  math.sqrt(math.pow(windData!.driftE[k], 2) + math.pow(windData!.driftN[k], 2)).toDouble()
+              ];
         score = _nums(r['anomaly_score']);
         phasePred = (r['phase_pred'] as List).cast<String>();
         phaseTrue = (r['phase_true'] as List).cast<String>();
@@ -171,6 +193,50 @@ class _ReplayScreenState extends State<ReplayScreen> {
       ),
     );
     if (ok == true) setState(() => faults.add({'kind': kind, 'phase': phase}));
+  }
+
+  Future<void> _addGust() async {
+    String strength = 'strong', phase = 'parachute';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('ADD A WIND GUST'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text(
+                'Unlike a fault, a gust is real: it pushes the spacecraft off NASA\'s path. Every sensor still works '
+                'and reads the new motion. There are no gusts in approach: there is no air above ~125 km.',
+                style: TextStyle(fontSize: 12.5, color: kInkDim, height: 1.4)),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: strength,
+              dropdownColor: kPanel2,
+              decoration: const InputDecoration(labelText: 'Strength'),
+              items: [
+                for (final k in gustLabels.keys)
+                  DropdownMenuItem(value: k, child: Text('${gustLabels[k]} · ${gustSpeeds[k]} m/s')),
+              ],
+              onChanged: (v) => setD(() => strength = v!),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: phase,
+              dropdownColor: kPanel2,
+              decoration: const InputDecoration(labelText: 'During phase'),
+              items: [for (final p in _gustPhases) DropdownMenuItem(value: p, child: Text(phaseLabel(p)))],
+              onChanged: (v) => setD(() => phase = v!),
+            ),
+            const SizedBox(height: 6),
+            Text(_gustHelp[phase]!, style: const TextStyle(fontSize: 12, color: kInkFaint, height: 1.4)),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) setState(() => gusts.add({'phase': phase, 'strength': strength}));
   }
 
   @override
@@ -283,6 +349,30 @@ class _ReplayScreenState extends State<ReplayScreen> {
           ),
         ]),
         const SizedBox(height: 18),
+        Row(children: [
+          Expanded(child: Text('4 · ADD WEATHER', style: consoleLabel(size: 9.5))),
+          const EvidenceBadge(Evidence.simulated),
+        ]),
+        const SizedBox(height: 6),
+        const Text('A wind gust really moves the spacecraft. The sensors all keep working.',
+            style: TextStyle(color: kInkFaint, fontSize: 12, height: 1.4)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (int i = 0; i < gusts.length; i++)
+            InputChip(
+              avatar: const Icon(Icons.air, size: 16, color: kWind),
+              label: Text('${gustLabels[gusts[i]['strength']]} · ${phaseLabel(gusts[i]['phase']!)}'),
+              onDeleted: () => setState(() => gusts.removeAt(i)),
+            ),
+          if (gusts.isEmpty) Text('No wind · calm landing', style: readout(size: 12, color: kInkFaint)),
+        ]),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: gusts.length < 3 ? _addGust : null,
+          icon: const Icon(Icons.air),
+          label: const Text('Add wind gust'),
+        ),
+        const SizedBox(height: 18),
         FilledButton.icon(
           onPressed: loading ? null : _run,
           icon: loading
@@ -311,22 +401,38 @@ class _ReplayScreenState extends State<ReplayScreen> {
     final alarmBands = [
       for (final a in alarms) (x1: (a['start_t'] as num).toDouble(), x2: (a['end_t'] as num).toDouble())
     ];
+    final blown = ((data!['gusts'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final gustBands = [
+      for (final g in blown) (x1: (g['start_t'] as num).toDouble(), x2: (g['end_t'] as num).toDouble())
+    ];
+    final windy = blown.isNotEmpty;
 
     final charts = [
       _chartCard('Altitude above landing site', _altChart(now),
           evidence: const [Evidence.nasa], note: 'log scale · background colour = AI’s phase estimate'),
       _chartCard('Sensor: ${channelLabels[channel]!}',
-          _lineChart(value, now, kObserved, faultBands, alarmBands, ref: healthy),
+          _lineChart(value, now, kObserved, faultBands, alarmBands,
+              ref: healthy, ref2: windy ? nasa : const [], gustBands: gustBands),
           evidence: const [Evidence.nasa, Evidence.simulated],
-          legend: const [
+          legend: [
             ('what the sensor reports', kObserved),
             ('healthy sensor', kInkDim),
+            if (windy) ('NASA\'s landing, no wind', kInkFaint),
             ('injected fault', kScenario),
+            if (windy) ('wind gust', kWind),
             ('AI alarm', kCaution),
           ],
-          note: 'A fault changes only this reading, not the landing: altitude and the 3D view stay the same. '
-              'Faults last seconds, so look at the close-up, or tap a fault in “Faults we injected” to jump to it.',
-          below: _closeUp(now, faultBands, alarmBands)),
+          note: windy
+              ? 'A fault changes only this reading. A wind gust really moves the spacecraft, so the healthy reading '
+                  'moves away from NASA\'s (dotted). Tap a fault or a gust in the lists to jump to it.'
+              : 'A fault changes only this reading, not the landing: altitude and the 3D view stay the same. '
+                  'Faults last seconds, so look at the close-up, or tap a fault in “Faults we injected” to jump to it.',
+          below: _closeUp(now, faultBands, alarmBands, gustBands)),
+      if (windy)
+        _chartCard('Pushed off course', _lineChart(driftH, now, kWind, const [], const [], gustBands: gustBands, floorY: 0),
+            evidence: const [Evidence.simulated],
+            legend: const [('sideways distance from NASA\'s path', kWind)],
+            note: 'metres · shaded = the gust · the engines cancel the sideways speed but do not fly back'),
       _chartCard('AI surprise score',
           _lineChart([for (final s in score) s.isNaN ? double.nan : math.log(math.max(s, 1e-5)) / math.ln10],
               now, kDerived, const [], alarmBands),
@@ -343,6 +449,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
       speed: speed.toDouble(),
       onSeek: _seekTo,
       compact: !wide,
+      wind: windData,
+      gusts: [
+        for (final g in blown)
+          (start: (g['start_t'] as num).toDouble(), end: (g['end_t'] as num).toDouble(), label: 'gust')
+      ],
       faults: [
         for (final f in injected)
           (start: (f['start_t'] as num).toDouble(), end: (f['end_t'] as num).toDouble(), label: faultLabels[f['kind']]!)
@@ -460,6 +571,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
           _Score('Phase accuracy', '${(((data!['phase_accuracy'] as num?) ?? 0) * 100).toStringAsFixed(1)} %'),
           _Score('Faults caught', '${s['faults_detected']} / ${s['faults_injected']}',
               color: s['faults_detected'] == s['faults_injected'] ? kGo : kSignal),
+          if ((s['gusts'] ?? 0) as num > 0)
+            _Score('Gusts noticed', '${s['gusts_noticed']} / ${s['gusts']}', color: kWind),
           _Score('False alarms', '${s['false_alarms']}', color: s['false_alarms'] == 0 ? kGo : kSignal),
           Text('scores for the whole landing', style: readout(size: 10.5, color: kInkFaint)),
         ]),
@@ -503,7 +616,67 @@ class _ReplayScreenState extends State<ReplayScreen> {
           for (final f in injected) _faultTile(f, now),
         ]),
       ),
+      if (((data!['gusts'] as List?) ?? const []).isNotEmpty) ...[
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Wind gusts we added',
+          icon: Icons.air,
+          evidence: const [Evidence.simulated],
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text(
+                'A gust is real: the spacecraft moves and every sensor still works. The AI was trained to catch '
+                'broken sensors, so noticing a gust is a bonus, not its job. "Noticed" means an alarm that does not '
+                'go off when the same landing is replayed without the wind.',
+                style: TextStyle(color: kInkFaint, fontSize: 12, height: 1.4)),
+            const SizedBox(height: 8),
+            for (final g in (data!['gusts'] as List).cast<Map<String, dynamic>>()) _gustTile(g, now),
+          ]),
+        ),
+      ],
     ]);
+  }
+
+  Widget _gustTile(Map<String, dynamic> g, double now) {
+    final drift = (g['drift_at_touchdown_m'] as num).toDouble(), maxDrift = (g['max_drift_m'] as num).toDouble();
+    final ch = (g['max_change'] as num).toDouble();
+    final over = (g['effect_end_t'] as num) <= now;
+    final noticed = g['noticed'] == true;
+    String m(double x) => x.toStringAsFixed(x < 10 ? 1 : 0);
+    final effect = maxDrift < 10
+        ? 'Barely moved it (${m(maxDrift)} m): the descent stage is heavy, the air is thin, and the engines correct the push.'
+        : 'Pushed it ${m(maxDrift)} m off NASA\'s path; the rover lands ${m(drift)} m from NASA\'s spot.';
+    final reading = 'Changed this reading by up to ${ch.toStringAsFixed(ch >= 10 ? 0 : (ch >= 1 ? 1 : 2))} '
+        '${channelUnit(channel)}${over && !noticed ? ': smooth enough to still look like normal flight to the AI.' : '.'}';
+    return InkWell(
+      // land on the gust's peak: strongest wind, the stack leaning, the close-up showing the push
+      onTap: () => _seekTo(((g['start_t'] as num) + (g['end_t'] as num)) / 2),
+      child: Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+        child: Row(children: [
+          Icon(Icons.air, size: 16, color: (g['start_t'] as num) <= now ? kWind : kInkFaint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                  '${gustLabels[g['strength']]} (${(g['peak_wind_m_s'] as num).toInt()} m/s → '
+                  '${compass(g['direction_deg'] as num)}) during ${phaseLabel(g['phase'])}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 2),
+              Text('${fmtT(g['start_t'] as num)} → ${fmtT(g['end_t'] as num)} · tap to see it',
+                  style: readout(size: 11, color: kInkFaint)),
+              const SizedBox(height: 4),
+              Text('$effect $reading', style: const TextStyle(fontSize: 11.5, color: kInkDim, height: 1.35)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          over
+              ? Tag(noticed ? 'Noticed' : 'Not noticed', color: noticed ? kGo : kInkDim)
+              : const Tag('Upcoming', color: kInkFaint),
+        ]),
+      ),
+    );
   }
 
   Widget _faultTile(Map<String, dynamic> f, double now) {
@@ -555,8 +728,9 @@ class _ReplayScreenState extends State<ReplayScreen> {
   Widget _alertTile(Map<String, dynamic> a, List<Map<String, dynamic>> injected) {
     final m = a['matches_fault'];
     final real = m != null;
+    final gust = !real && a['matches_gust'] != null;
     final dets = (a['detectors'] as List).map((d) => d == 'persistence' ? 'baseline' : 'LSTM').join(' + ');
-    final c = real ? kCaution : kSignal;
+    final c = real ? kCaution : (gust ? kWind : kSignal);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
@@ -575,14 +749,16 @@ class _ReplayScreenState extends State<ReplayScreen> {
             Text(
                 real
                     ? 'Real problem: matches the ${faultLabels[injected[m as int]['kind']]!.toLowerCase()} we injected.'
-                    : 'False alarm: nothing was broken here.',
+                    : gust
+                        ? 'Real event: the wind gust moved the spacecraft. The sensor works; the motion was unusual.'
+                        : 'False alarm: nothing was broken here.',
                 style: const TextStyle(fontSize: 12.5, color: kInkDim)),
             const SizedBox(height: 2),
             Text('flagged by $dets', style: readout(size: 10.5, color: kInkFaint)),
           ]),
         ),
         const SizedBox(width: 8),
-        Tag(real ? 'Correct' : 'False alarm', color: c),
+        Tag(real ? 'Correct' : (gust ? 'Wind' : 'False alarm'), color: c),
       ]),
     );
   }
@@ -591,7 +767,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
   static const _closeBack = 20.0, _closeAhead = 10.0;
 
   /// The sensor over a 30 s window around now, where a few-second fault is easy to see.
-  Widget _closeUp(double now, List<({double x1, double x2})> faultBands, List<({double x1, double x2})> alarmBands) {
+  Widget _closeUp(double now, List<({double x1, double x2})> faultBands, List<({double x1, double x2})> alarmBands,
+      List<({double x1, double x2})> gustBands) {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: 12),
       Text('CLOSE-UP · ${_closeBack.toInt()} s BEFORE TO ${_closeAhead.toInt()} s AFTER NOW', style: consoleLabel(size: 9.5)),
@@ -601,7 +778,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
         padding: const EdgeInsets.fromLTRB(0, 8, 8, 0),
         decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
         child: _lineChart(value, now, kObserved, faultBands, alarmBands,
-            ref: healthy, x0: now - _closeBack, x1: now + _closeAhead),
+            ref: healthy,
+            ref2: gustBands.isEmpty ? const [] : nasa,
+            gustBands: gustBands,
+            x0: now - _closeBack,
+            x1: now + _closeAhead),
       ),
     ]);
   }
@@ -646,12 +827,15 @@ class _ReplayScreenState extends State<ReplayScreen> {
     String Function(double)? yTitle,
     bool phaseBands = false,
     List<double> ref = const [], // drawn dashed underneath, e.g. what a healthy sensor would read
+    List<double> ref2 = const [], // dotted, e.g. NASA's reading without the wind
+    List<({double x1, double x2})> gustBands = const [],
     double? x0, // optional time window (close-up)
     double? x1,
+    double? floorY, // lowest value the axis may show, e.g. 0 for a distance
   }) {
     final minX = x0 ?? t.first, maxX = x1 ?? t.last;
     final window = x0 != null || x1 != null;
-    final past = <FlSpot>[], future = <FlSpot>[], refSpots = <FlSpot>[];
+    final past = <FlSpot>[], future = <FlSpot>[], refSpots = <FlSpot>[], ref2Spots = <FlSpot>[];
     double lo = double.infinity, hi = -double.infinity;
     for (int k = 0; k < ys.length; k++) {
       final v = ys[k];
@@ -672,6 +856,13 @@ class _ReplayScreenState extends State<ReplayScreen> {
           hi = math.max(hi, ref[k]);
         }
       }
+      if (k < ref2.length && !ref2[k].isNaN) {
+        ref2Spots.add(FlSpot(t[k], ref2[k]));
+        if (inView) {
+          lo = math.min(lo, ref2[k]);
+          hi = math.max(hi, ref2[k]);
+        }
+      }
     }
     if (lo == double.infinity) {
       lo = 0;
@@ -684,6 +875,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
       if (phaseBands)
         for (final b in _phaseRuns())
           VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: phaseColors[b.phase]!.withValues(alpha: b.x1 <= now ? 0.16 : 0.05)),
+      for (final b in gustBands)
+        VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: kWind.withValues(alpha: 0.16)),
       for (final b in alarmBands)
         if (b.x1 <= now)
           VerticalRangeAnnotation(x1: b.x1 - 0.5, x2: math.min(b.x2, now) + 0.5, color: kCaution.withValues(alpha: 0.30)),
@@ -696,7 +889,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
       LineChartData(
         minX: minX,
         maxX: maxX,
-        minY: lo - pad,
+        minY: floorY == null ? lo - pad : math.max(floorY, lo - pad),
         maxY: hi + pad,
         clipData: const FlClipData.all(),
         lineTouchData: const LineTouchData(enabled: false),
@@ -738,6 +931,13 @@ class _ReplayScreenState extends State<ReplayScreen> {
           ),
         ),
         lineBarsData: [
+          if (ref2Spots.isNotEmpty)
+            LineChartBarData(
+                spots: ref2Spots,
+                color: kInkFaint.withValues(alpha: 0.8),
+                barWidth: 1,
+                dashArray: [1, 3],
+                dotData: const FlDotData(show: false)),
           if (refSpots.isNotEmpty)
             LineChartBarData(
                 spots: refSpots,

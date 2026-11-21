@@ -97,3 +97,37 @@ def test_journey(client):
     assert j["dist_earth_km"][0] < 1e5            # starts next to Earth
     assert j["dist_mars_km"][-1] < 1e5            # ends at Mars
     assert 4.5e8 < j["total_path_km"] < 5.0e8      # NASA: ~472 million km
+
+
+def test_replay_with_wind_gust(client):
+    """A gust moves the spacecraft: every sensor reads it, nothing is broken, alarms during it are not false alarms."""
+    r = client.post("/api/missions/msl/replay", json={
+        "channel": "vertical_speed_m_s", "gusts": [{"phase": "parachute", "strength": "severe"}]}).json()
+    g = r["gusts"][0]
+    assert g["phase"] == "parachute" and g["peak_wind_m_s"] == 35 and g["drift_at_touchdown_m"] > 50
+    assert g["max_change"] > 0.6 and r["summary"]["gusts"] == 1
+    assert r["wind"] and len(r["wind"]["drift_e_m"]) == len(r["t_s"])
+    assert max(abs(v - n) for v, n in zip(r["value"], r["value_nasa"])) > 0.6     # the reading changed ...
+    assert r["value"] == r["value_healthy"]                                       # ... and the sensor is fine
+    assert all(a["matches_gust"] is None or a["matches_fault"] is None for a in r["alarms"])
+    assert r["summary"]["false_alarms"] == sum(a["matches_fault"] is None and a["matches_gust"] is None
+                                               for a in r["alarms"])
+    assert client.post("/api/missions/msl/replay", json={"gusts": [{"phase": "approach"}]}).status_code == 422
+
+
+def test_gust_gets_no_credit_for_alarms_that_happen_anyway(client):
+    """Curiosity, seed 3: the AI raises a false alarm early in entry with or without wind. A gust
+    there must not count as noticed, and that alarm stays a false alarm."""
+    body = {"channel": "vertical_speed_m_s", "seed": 3}
+    calm = client.post("/api/missions/msl/replay", json=body).json()
+    windy = client.post("/api/missions/msl/replay",
+                        json={**body, "gusts": [{"phase": "entry", "strength": "severe"}]}).json()
+    g = windy["gusts"][0]
+    first = calm["alarms"][0]
+    assert first["matches_fault"] is None                                  # a false alarm without wind
+    assert g["start_t"] <= first["end_t"] and first["start_t"] <= g["effect_end_t"]   # inside the gust
+    # this gust adds no alarm of its own: same alarms, nothing credited to the wind
+    assert [a["start_t"] for a in windy["alarms"]] == [a["start_t"] for a in calm["alarms"]]
+    assert all(a["matches_gust"] is None for a in windy["alarms"])
+    assert g["noticed"] is False and windy["summary"]["gusts_noticed"] == 0
+    assert windy["summary"]["false_alarms"] == calm["summary"]["false_alarms"]

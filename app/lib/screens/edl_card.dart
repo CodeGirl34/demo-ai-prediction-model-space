@@ -26,6 +26,8 @@ class EdlCard extends StatefulWidget {
     this.compact = false,
     this.faults = const [],
     this.alarms = const [],
+    this.wind,
+    this.gusts = const [],
   });
   final Api api;
   final String mission;
@@ -39,6 +41,11 @@ class EdlCard extends StatefulWidget {
   /// so the 3D model does not move differently: the view says when one is active instead.
   final List<EdlMark> faults;
   final List<EdlMark> alarms;
+
+  /// Wind gusts we added. Unlike a sensor fault, a gust really moves the spacecraft: the stack
+  /// leans in the wind and drifts off NASA's path.
+  final EdlWind? wind;
+  final List<EdlMark> gusts;
 
   @override
   State<EdlCard> createState() => _EdlCardState();
@@ -113,7 +120,9 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
     epilogue = shown >= l.tEnd - 0.6 && widget.now >= l.tEnd - 1
         ? math.min(EdlTimeline.epilogueS, epilogue + dt)
         : 0;
-    final s = buildEdlScene(l, shown + epilogue, clock);
+    final ts = shown + epilogue, w = widget.wind;
+    final s = buildEdlScene(l, ts, clock,
+        wind: w?.windAt(ts) ?? V3.zero, swing: w?.swingAt(ts) ?? (0.0, 0.0));
     if (clock - _lastDrag > 2.5) cam.yaw += dt * 0.15;
     final k = 1 - math.exp(-dt * 3);
     cam.target = V3.lerp(cam.target, s.center, k);
@@ -138,6 +147,12 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
       if (f.start - 0.5 <= t && t <= f.end + 0.5) faultNow = f;
     }
     final alarmNow = widget.alarms.any((a) => a.start - 0.5 <= t && t <= a.end + 0.5);
+    final windNow = widget.wind?.windAt(t) ?? V3.zero;
+    final windH = math.sqrt(windNow.x * windNow.x + windNow.y * windNow.y);
+    final gustNow = windH > 0.5;
+    final (driftE, driftN) = widget.wind?.driftAt(t) ?? (0.0, 0.0);
+    final drift = math.sqrt(driftE * driftE + driftN * driftN);
+    final offCourse = drift > 0.5;
     final k = l.currentIndex(t);
     final ev = k >= 0 ? l.events[k] : null;
     final alt = scene!.altKm;
@@ -150,7 +165,7 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
           height: widget.compact ? 250 : 290,
-          child: ClipRect(
+          child: LayoutBuilder(builder: (context, box) => ClipRect(
             child: Stack(children: [
               Positioned.fill(
                 child: GestureDetector(
@@ -193,18 +208,30 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
                   ]),
                 ),
               ),
-              if (faultNow == null && !alarmNow) // the badges need the room on a phone
+              if (faultNow == null && !alarmNow && !gustNow && !offCourse) // the badges need the room on a phone
                 Positioned(
                   left: 12,
                   bottom: 8,
                   child: IgnorePointer(child: Text('DRAG TO TURN', style: consoleLabel(size: 9))),
                 ),
-              if (faultNow != null || alarmNow)
+              if (offCourse)
+                Positioned(
+                  left: 10,
+                  bottom: 8,
+                  child: IgnorePointer(child: _OffCourse(driftE, driftN, landed: t >= 0)),
+                ),
+              if (faultNow != null || alarmNow || gustNow)
                 Positioned(
                   right: 10,
-                  bottom: 8,
+                  // on a phone the badges sit above the off-course map instead of on top of it
+                  bottom: offCourse && box.maxWidth < 420 ? 72 : 8,
                   child: IgnorePointer(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      if (gustNow) ...[
+                        _Badge('WIND ${windH.toStringAsFixed(0)} m/s → ${compass(math.atan2(windNow.x, windNow.y) * 180 / math.pi)}',
+                            'a real push: the sensors all work', kWind),
+                        if (faultNow != null || alarmNow) const SizedBox(height: 6),
+                      ],
                       if (faultNow != null)
                         _Badge('SENSOR FAULT · ${faultNow.label.toUpperCase()}',
                             'the reading is wrong, the spacecraft is fine', kScenario),
@@ -214,10 +241,10 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
                   ),
                 ),
             ]),
-          ),
+          )),
         ),
         const SizedBox(height: 12),
-        _PhaseBar(tl: l, now: t, faults: widget.faults),
+        _PhaseBar(tl: l, now: t, faults: widget.faults, gusts: widget.gusts),
         const SizedBox(height: 12),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
@@ -330,22 +357,78 @@ class _Badge extends StatelessWidget {
       );
 }
 
+/// Where the wind has pushed the spacecraft: NASA's path in the middle, the spacecraft as a dot.
+class _OffCourse extends StatelessWidget {
+  const _OffCourse(this.e, this.n, {required this.landed});
+  final double e, n;
+  final bool landed;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = math.sqrt(e * e + n * n);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      decoration: BoxDecoration(color: kPanel.withValues(alpha: 0.85), border: const Border(left: BorderSide(color: kWind, width: 3))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(width: 46, height: 46, child: CustomPaint(painter: _OffCoursePainter(e, n))),
+        const SizedBox(width: 8),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text('${d.toStringAsFixed(d < 10 ? 1 : 0)} m', style: readout(size: 13, color: kWind, weight: FontWeight.w600)),
+          Text(landed ? 'landed off\nNASA\'s spot' : 'off NASA\'s\npath', style: readout(size: 9.5, color: kInkDim)),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _OffCoursePainter extends CustomPainter {
+  _OffCoursePainter(this.e, this.n);
+  final double e, n;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero), r = size.width / 2 - 2;
+    final d = math.sqrt(e * e + n * n);
+    final scale = const [10.0, 50.0, 100.0, 250.0, 500.0, 1000.0].firstWhere((s) => s >= d, orElse: () => d);
+    final ring = Paint()
+      ..color = kInkFaint.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawCircle(c, r, ring);
+    canvas.drawCircle(c, r / 2, ring);
+    final cross = Paint()..color = kInk.withValues(alpha: 0.8)..strokeWidth = 1.2;
+    canvas.drawLine(c + const Offset(-4, 0), c + const Offset(4, 0), cross);
+    canvas.drawLine(c + const Offset(0, -4), c + const Offset(0, 4), cross);
+    final p = c + Offset(e / scale * r, -n / scale * r);
+    canvas.drawLine(c, p, Paint()..color = kWind.withValues(alpha: 0.6)..strokeWidth = 1);
+    canvas.drawCircle(p, 3.2, Paint()..color = kWind);
+    final tp = TextPainter(
+        text: TextSpan(text: '${scale.toStringAsFixed(0)} m', style: consoleLabel(size: 7.5)),
+        textDirection: TextDirection.ltr)
+      ..layout();
+    tp.paint(canvas, Offset(size.width - tp.width, size.height - tp.height + 2));
+  }
+
+  @override
+  bool shouldRepaint(covariant _OffCoursePainter old) => old.e != e || old.n != n;
+}
+
 class _PhaseBar extends StatelessWidget {
-  const _PhaseBar({required this.tl, required this.now, this.faults = const []});
+  const _PhaseBar({required this.tl, required this.now, this.faults = const [], this.gusts = const []});
   final EdlTimeline tl;
   final double now;
-  final List<EdlMark> faults;
+  final List<EdlMark> faults, gusts;
 
   @override
   Widget build(BuildContext context) =>
-      SizedBox(height: 40, child: CustomPaint(painter: _PhaseBarPainter(tl, now, faults), size: Size.infinite));
+      SizedBox(height: 40, child: CustomPaint(painter: _PhaseBarPainter(tl, now, faults, gusts), size: Size.infinite));
 }
 
 class _PhaseBarPainter extends CustomPainter {
-  _PhaseBarPainter(this.tl, this.now, this.faults);
+  _PhaseBarPainter(this.tl, this.now, this.faults, this.gusts);
   final EdlTimeline tl;
   final double now;
-  final List<EdlMark> faults;
+  final List<EdlMark> faults, gusts;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -377,7 +460,12 @@ class _PhaseBarPainter extends CustomPainter {
       final ex = x(e.t);
       canvas.drawRect(Rect.fromLTWH(ex - 0.5, y - 7, 1, 14), Paint()..color = kInk.withValues(alpha: 0.55));
     }
-    // injected faults, at least 3 px wide so a short one still shows
+    // wind gusts, then injected faults, at least 3 px wide so a short one still shows
+    for (final g in gusts) {
+      final x0 = x(g.start), x1 = x(g.end);
+      canvas.drawRect(Rect.fromCenter(center: Offset((x0 + x1) / 2, y), width: math.max(3.0, x1 - x0), height: 8),
+          Paint()..color = kWind);
+    }
     for (final f in faults) {
       final x0 = x(f.start), x1 = x(f.end);
       final c = (x0 + x1) / 2, w = math.max(3.0, x1 - x0);
@@ -388,5 +476,6 @@ class _PhaseBarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PhaseBarPainter old) => old.now != now || old.tl != tl || old.faults != faults;
+  bool shouldRepaint(covariant _PhaseBarPainter old) =>
+      old.now != now || old.tl != tl || old.faults != faults || old.gusts != gusts;
 }

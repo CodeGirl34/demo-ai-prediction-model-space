@@ -319,11 +319,71 @@ raises alarms when an injected sensor fault appears.
       (q ∝ ρ^0.5 v³, Mars scale height 11.1 km).
 
     When an injected fault or an AI alarm is active, the 3D view says so, and the phase bar marks the
-    faults. The model itself does not move differently, because the fault is in the sensor.
+    faults. The model itself does not move differently, because the fault is in the sensor. A wind
+    gust is different: it really moves the spacecraft (below).
     Shapes are simplified, and the parachute is drawn smaller than the real 21.5 m canopy.
     This view is also plain `CustomPainter` (`app/lib/edl3d.dart`).
 * **Telemetry**: the 27 NASA MSL channels from module 1, with the expert-labeled and detected
   anomaly windows over the LSTM prediction.
+
+**Wind gusts: a real push, not a broken sensor** ([`wind.py`](src/spacecraft_ai/faults/wind.py))
+
+A fault breaks a sensor while the spacecraft still flies NASA's path. A gust is the opposite: every
+sensor works, but the spacecraft really moves differently. In the replay you can add up to three
+gusts (light 10 m/s, strong 20 m/s or severe 35 m/s at the peak) during entry, parachute, powered
+descent or sky crane. There are none in approach, because above about 125 km there is no air to push.
+
+How a gust moves the spacecraft:
+* **Shape**: the "1 − cosine" discrete gust used in aircraft certification (EASA CS-25.341). It lasts
+  15–30 s and blows horizontally in a random direction, with an up- or downdraft of 0.3 × the peak.
+* **Entry and parachute**: the only push is drag, a = −k|u|u, where u is the velocity relative to the
+  air. k comes from NASA's own data at each sample (k = sensed acceleration / speed²), so the model
+  uses the drag the real vehicle felt.
+* **Powered descent and sky crane**: assumed descent stage + rover of 1900 kg, drag area 9 m² and
+  air density 0.017 kg/m³ at the surface. Guidance cancels sideways speed within a few seconds and
+  brings the altitude back to the planned profile. It does not fly back to the original point, so
+  the rover lands where the wind left it.
+* **Consistent readings**: NASA's velocity and sensed acceleration are rebuilt from the Mars-fixed
+  position, including Mars's rotation and gravity. This matches NASA's sensed-acceleration column
+  within about 0.04 m/s² from parachute to touchdown (`tests/test_wind.py`). A gust then changes
+  altitude, speed, vertical speed, flight-path angle, sensed acceleration, latitude and longitude
+  together.
+
+Distance from NASA's touchdown point after one gust (median of 10 random gusts, Curiosity / Perseverance):
+
+| Gust during | Light 10 m/s | Strong 20 m/s | Severe 35 m/s |
+|---|---|---|---|
+| Entry | 83 / 83 m | 167 / 165 m | 293 / 287 m |
+| Parachute | 107 / 107 m | 213 / 209 m | 368 / 356 m |
+| Powered descent | 0.9 / 1.3 m | 1.7 / 2.3 m | 3.3 / 3.7 m |
+| Sky crane | 0.1 / 0.1 m | 0.4 / 0.3 m | 1.2 / 1.1 m |
+
+The parachute is made to catch air, so it drifts with the wind. Entry varies the most (1–590 m):
+early in entry the air is too thin to matter, while near peak deceleration the drag is strongest.
+Under rocket power the heavy descent stage barely moves.
+
+**The AI did not notice any gust in our tests.** It was trained to catch broken sensors, not weather. A gust
+changes the readings smoothly, and all of them agree, which is what normal flight looks like.
+On Curiosity it noticed **none of 40 severe gusts**: 5 random gusts in each of the four phases,
+watching either vertical speed or sensed acceleration. A severe parachute gust changes the vertical
+speed by 4–7 m/s, but it does so over 15–30 s, so it looks like normal flight to the AI.
+To be fair, the replay runs the same landing a second time, with the same sensor noise and faults
+but no wind. An alarm counts as noticing the gust only if it goes off during the gust and not in
+the run without wind. Otherwise an alarm the AI raises anyway would get the credit. The app says
+all this openly and does not count a missed gust as a failure.
+
+In the app, the 3D view shows:
+* wind streaks
+* a wind badge with the speed and direction
+* the parachute or descent stage leaning with the wind
+* a mini-map of how far the spacecraft is from NASA's path, and after touchdown, from NASA's landing spot
+
+The sensor chart adds NASA's reading without the wind as a dotted line and shades the gust. A
+"Pushed off course" chart plots the sideways distance, and a "Gusts noticed" score sits next to
+faults caught and false alarms. Tapping a gust jumps the replay to its peak.
+
+This is a first-order model for a demo, not a flight simulator. It has no parachute pendulum, no
+lift changes during entry, and NASA's reconstruction already contains the real winds of those days.
 
 **What the API runs.** Replays use the same models measured in module 3:
 * the phase classifier and phase-aware LSTMs trained on Perseverance only
@@ -331,15 +391,16 @@ raises alarms when an injected sensor fault appears.
 
 `scripts/export_serving_models.py` re-trains them with the experiment's seed and checks that their
 alarms on the clean Curiosity landing are identical to the published results. The exported models
-take 2.5 MB in `models/serving/`. A replay request takes about 3 s on a laptop CPU.
+take 2.5 MB in `models/serving/`. A replay request takes about 3 s on a laptop CPU, or twice that with wind gusts, because the landing
+is also replayed without the wind.
 
 | Endpoint | |
 |---|---|
-| `GET /api/health` | status, channels, fault types, phases |
+| `GET /api/health` | status, channels, fault types, phases, gust phases and strengths |
 | `GET /api/summary` | headline metrics of modules 1–3 |
 | `GET /api/missions` | both landings with as-flown events (seconds to touchdown) |
 | `GET /api/missions/{msl\|m2020}/trajectory` | altitude, speed, phase over time |
-| `POST /api/missions/{msl\|m2020}/replay` | inject faults → phase estimate, anomaly score, alarms, caught / missed faults |
+| `POST /api/missions/{msl\|m2020}/replay` | inject faults and wind gusts → phase estimate, anomaly score, alarms, caught / missed faults, gusts noticed, drift |
 | `GET /api/telemetry/channels[/{id}]` | module-1 MSL channel results and series |
 | `GET /api/journey` | Perseverance's Earth → Mars cruise every 6 h: ship, Earth and Mars positions (AU), distances, speed, light time |
 
@@ -347,7 +408,8 @@ Interactive docs: `http://localhost:8000/docs`. Example:
 
 ```bash
 curl -X POST localhost:8000/api/missions/msl/replay -H 'Content-Type: application/json' \
-  -d '{"channel": "vertical_speed_m_s", "faults": [{"kind": "drift", "phase": "parachute"}]}'
+  -d '{"channel": "vertical_speed_m_s", "faults": [{"kind": "drift", "phase": "parachute"}],
+       "gusts": [{"phase": "parachute", "strength": "severe"}]}'
 ```
 
 **Run it**
@@ -406,8 +468,9 @@ src/spacecraft_ai/
   faults/           # module 3
     inject.py       #   six documented sensor-fault types
     experiment.py   #   cross-mission phase-aware vs phase-blind vs baseline comparison
+    wind.py         #   wind gusts that really move the spacecraft (replay only)
   api/              # module 4
-    engine.py       #   loads serving models, runs replays with injected faults
+    engine.py       #   loads serving models, runs replays with injected faults and wind gusts
     app.py          #   FastAPI endpoints (+ serves the Flutter web build)
 app/                # Flutter dashboard (lib/screens: overview, landing replay, telemetry)
 models/serving/     # exported phase classifier + LSTMs used by the API

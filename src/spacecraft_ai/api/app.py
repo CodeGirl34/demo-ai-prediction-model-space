@@ -13,12 +13,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..faults.inject import FAULT_TYPES
+from ..faults.wind import GUST_PHASES, GUST_STRENGTHS
 from ..faults.experiment import CHANNELS
 from ..phases.classifier import EDL_PHASES
 from .engine import Engine, ROOT, MISSIONS
 
 FaultKind = Literal[tuple(FAULT_TYPES)]
 Phase = Literal[tuple(EDL_PHASES)]
+GustPhase = Literal[tuple(GUST_PHASES)]
+GustStrength = Literal[tuple(GUST_STRENGTHS)]
 Channel = Literal[tuple(CHANNELS)]
 MissionId = Literal[tuple(MISSIONS)]
 
@@ -48,10 +51,17 @@ class FaultRequest(BaseModel):
     magnitude_frac: float | None = Field(None, ge=0, le=1, description="fault size as a fraction of the channel range")
 
 
+class GustRequest(BaseModel):
+    phase: GustPhase = Field(description="no gusts in approach: there is no air above ~125 km")
+    strength: GustStrength = "strong"
+
+
 class ReplayRequest(BaseModel):
     channel: Channel = "vertical_speed_m_s"
     faults: list[FaultRequest] = Field(default_factory=list, max_length=5)
     random_faults: int = Field(0, ge=0, le=4, description="extra faults with random type and phase")
+    gusts: list[GustRequest] = Field(default_factory=list, max_length=3,
+                                     description="wind gusts: they move the spacecraft, every sensor stays healthy")
     seed: int = 0
 
 
@@ -59,7 +69,8 @@ class ReplayRequest(BaseModel):
 def health():
     e = engine()
     return {"status": "ok", "models_trained_on": e.trained_on, "channels": CHANNELS,
-            "fault_types": FAULT_TYPES, "phases": EDL_PHASES}
+            "fault_types": FAULT_TYPES, "phases": EDL_PHASES,
+            "gust_phases": GUST_PHASES, "gust_strengths": GUST_STRENGTHS}
 
 
 @app.get("/api/summary")
@@ -79,7 +90,8 @@ def trajectory(mission: MissionId, step: int = Query(10, ge=1, le=1000)):
 
 @app.post("/api/missions/{mission}/replay")
 def replay(mission: MissionId, req: ReplayRequest):
-    return engine().replay(mission, req.channel, [f.model_dump() for f in req.faults], req.random_faults, req.seed)
+    return engine().replay(mission, req.channel, [f.model_dump() for f in req.faults], req.random_faults, req.seed,
+                           gusts=[g.model_dump() for g in req.gusts])
 
 
 @app.get("/api/journey")

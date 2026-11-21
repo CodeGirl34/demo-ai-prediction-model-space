@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:spacecraft_ai_app/edl3d.dart';
+import 'package:spacecraft_ai_app/journey3d.dart' show V3;
 
 /// A synthetic landing with the shape of the real one (times in s to touchdown, altitude in km).
 (List<Map<String, dynamic>>, Map<String, dynamic>) _landing() {
@@ -82,4 +83,26 @@ void main() {
     final labels = [for (final (_, l) in buildEdlScene(tl, -170, 0).labels) l];
     expect(labels, contains('PARACHUTE'));
   });
+
+  test('a wind gust leans the stack and is sampled along the replay', () {
+    final (events, traj) = _landing();
+    final tl = EdlTimeline.build('msl', events, traj);
+    final calm = buildEdlScene(tl, -120, 0);
+    final windy = buildEdlScene(tl, -120, 0, wind: const V3(20, 0, 0), swing: (0.2, 0.0));
+    V3 chute(EdlScene s) => s.labels.firstWhere((l) => l.$2 == 'PARACHUTE').$1;
+    expect(chute(windy).x - chute(calm).x, greaterThan(1)); // canopy leans downwind (east)
+    expect(windy.groundZ, calm.groundZ); // the ground does not swing
+    expect(windy.wind.x, 20);
+
+    final w = EdlWind([-10, 0, 10], {
+      'e': [0, 10, 0], 'n': [0, 0, 0], 'u': [0, 0, 0],
+      'drift_e_m': [0, 50, 100], 'drift_n_m': [0, 0, 0],
+      'swing_e': [0, 0.1, 0], 'swing_n': [0, 0, 0],
+    });
+    expect(w.windAt(-5).x, closeTo(5, 1e-9));
+    expect(w.driftAt(5).$1, closeTo(75, 1e-9));
+    expect(w.driftAt(30).$1, 100); // stays where the wind left it
+    expect(w.windAt(30).length, 0);
+  });
 }
+

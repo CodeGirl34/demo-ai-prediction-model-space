@@ -1,4 +1,5 @@
 """Loads the served models and data once, and answers the API's questions."""
+import copy
 import json
 from ast import literal_eval
 from functools import lru_cache
@@ -10,7 +11,7 @@ import pandas as pd
 import torch
 
 from ..anomaly import model as amodel
-from ..faults import inject
+from ..faults import inject, wind
 from ..faults.experiment import CFG, Scaler, run_detectors, merge_sequences
 from ..phases.classifier import EDL_PHASES
 
@@ -88,9 +89,19 @@ class Engine:
 
     # ------------------------------------------------------------------ replay
     def replay(self, mission: str, channel: str, faults: list[dict], random_faults: int, seed: int,
-               step: int = 5) -> dict:
+               step: int = 5, gusts: list[dict] | None = None) -> dict:
         rng = np.random.default_rng(seed)
-        df = inject.add_sensor_noise(self.edl[mission], rng)
+        base = self.edl[mission]
+        # wind gusts move the spacecraft itself (all sensors agree); own random stream, so adding a
+        # gust does not change where the sensor faults land
+        blown = [wind.random_gust(base, np.random.default_rng([seed, 101, i]), g["phase"], g.get("strength", "strong"))
+                 for i, g in enumerate(gusts or [])]
+        moved, flight = wind.simulate(base, blown)
+        df = inject.add_sensor_noise(base, rng)
+        calm = df.copy()                             # the same landing without the wind (see below)
+        nasa = df[channel].to_numpy().copy()         # NASA's landing as flown: no wind, no faults
+        for col in wind.PERTURBED:
+            df[col] = df[col] + (moved[col] - base[col])
         scale = self.scaler.range(channel)
         injected: list[inject.Fault] = []
         values = df[channel].to_numpy()
@@ -104,13 +115,35 @@ class Engine:
             _, extra = inject.scenario(df, channel, rng, scale, random_faults, min_start=CFG.l_s * 3)
             injected += extra
         healthy = values.copy()                      # what a working sensor would have read
+        rng_calm = copy.deepcopy(rng)                # the same fault draws for the no-wind run
         for fl in sorted(injected, key=lambda f: f.start):
             values = inject.apply(values, fl, rng)
         df[channel] = values
         change = np.abs(values - healthy)
 
+        # each gust's window: the gust and up to 30 s after it, while the reading is still more
+        # than 3 sigma away from NASA's. Alarms in it are the gust, not false alarms.
+        wind_dev = np.abs(healthy - nasa)
+        thresh = 3 * inject.SENSOR_NOISE.get(channel, 0.1)
+        gust_win = []
+        for k, g in enumerate(sorted(blown, key=lambda g: g.start)):
+            stop = min([h.start for h in blown if h.start > g.start] + [g.end + int(30 / DT), len(df)])
+            above = np.flatnonzero(wind_dev[g.start:stop] > thresh)
+            gust_win.append((g, g.start, max(g.end, g.start + int(above[-1]) if len(above) else g.end)))
+
         r = run_detectors(df, channel, self.phase_model, self.scaler, self.models, detectors=SERVED)
         combined = merge_sequences(r["persistence"]["sequences"] + r["lstm_phase_aware"]["sequences"])
+        # The AI noticed a gust only if it raises an alarm that it does not raise on the same landing,
+        # with the same sensor noise and faults, without the wind. Otherwise an alarm the AI would
+        # have raised anyway would count as noticing the gust.
+        calm_alarms = []
+        if blown:
+            calm_values = calm[channel].to_numpy().copy()
+            for fl in sorted(injected, key=lambda f: f.start):
+                calm_values = inject.apply(calm_values, fl, rng_calm)
+            calm[channel] = calm_values
+            rc = run_detectors(calm, channel, self.phase_model, self.scaler, self.models, detectors=SERVED)
+            calm_alarms = merge_sequences(rc["persistence"]["sequences"] + rc["lstm_phase_aware"]["sequences"])
         t = df.t_minus_touchdown_s.to_numpy()
         pred = r["_phases"]
         true = df.phase.map(EDL_PHASES.index).to_numpy()
@@ -120,8 +153,11 @@ class Engine:
             e = min(e, len(t) - 1)
             src = [d for d in SERVED if any(a <= e and s <= b for a, b in r[d]["sequences"])]
             hit = [i for i, f in enumerate(injected) if f.start <= e and s <= f.end]
+            gust = [i for i, (_, a, b) in enumerate(gust_win) if a <= e and s <= b]
+            anyway = any(a <= e and s <= b for a, b in calm_alarms)   # also there without the wind
             alarms.append({"start_t": _f(t[s], 2), "end_t": _f(t[e], 2), "phase": EDL_PHASES[pred[s]],
                            "detectors": src, "matches_fault": hit[0] if hit else None,
+                           "matches_gust": gust[0] if gust and not hit and not anyway else None,
                            "peak_value": _f(np.max(np.abs(values[s:e + 1])), 3)})
         fault_out = [{"kind": f.kind, "phase": f.phase, "start_t": _f(t[f.start], 2), "end_t": _f(t[f.end], 2),
                       "magnitude": _f(f.magnitude, 3),
@@ -141,7 +177,24 @@ class Engine:
         buckets = np.arange(0, n, step)
         sl = np.array([b + int(np.argmax(change[b:b + step])) if change[b:b + step].max() > 0 else b
                        for b in buckets])
-        n_false = sum(a["matches_fault"] is None for a in alarms)
+        n_false = sum(a["matches_fault"] is None and a["matches_gust"] is None for a in alarms)
+        gust_out = []
+        for k, (g, a, b) in enumerate(gust_win):
+            _, alone = wind.simulate(base, [g])     # this gust's own push, if there are several
+            h = np.linalg.norm(alone["drift_m"][:, :2], axis=1)
+            gust_out.append({
+                "phase": g.phase, "strength": g.strength, "peak_wind_m_s": _f(g.peak_m_s, 1),
+                "vertical_m_s": _f(g.vertical_m_s, 1), "direction_deg": _f(g.direction_deg, 0),
+                "start_t": _f(t[g.start], 2), "end_t": _f(t[g.end], 2), "effect_end_t": _f(t[min(b, len(t) - 1)], 2),
+                "max_drift_m": _f(h.max(), 1), "drift_at_touchdown_m": _f(h[-1], 1),
+                "max_change": _f(wind_dev[a:b + 1].max(), 3),
+                "noticed": any(al["matches_gust"] == k for al in alarms)})
+        wind_out = None
+        if blown:
+            wf, dr, sw = flight["wind"], flight["drift_m"], flight["swing"]
+            wind_out = {"e": _arr(wf[sl, 0], 2), "n": _arr(wf[sl, 1], 2), "u": _arr(wf[sl, 2], 2),
+                        "drift_e_m": _arr(dr[sl, 0], 2), "drift_n_m": _arr(dr[sl, 1], 2), "drift_u_m": _arr(dr[sl, 2], 2),
+                        "swing_e": _arr(sw[sl, 0], 4), "swing_n": _arr(sw[sl, 1], 4)}
         return {
             "mission": mission, "channel": channel, "seed": seed, "step_s": step * DT,
             "trained_on": self.trained_on, "cross_mission": mission != self.trained_on,
@@ -150,6 +203,7 @@ class Engine:
             "speed_m_s": _arr(df.speed_rel_mars_m_s.to_numpy()[sl], 2),
             "value": _arr(values[sl], 3),
             "value_healthy": _arr(healthy[sl], 3),
+            "value_nasa": _arr(nasa[sl], 3),
             "channel_range": _f(scale, 3),
             "anomaly_score": _arr(score[sl], 5),
             "phase_true": [EDL_PHASES[i] for i in true[sl]],
@@ -157,7 +211,10 @@ class Engine:
             "phase_accuracy": _f(np.mean(pred == true), 4),
             "alarms": alarms,
             "faults": fault_out,
+            "gusts": gust_out,
+            "wind": wind_out,
             "summary": {"faults_injected": len(injected), "faults_detected": sum(f["detected"] for f in fault_out),
+                        "gusts": len(gust_out), "gusts_noticed": sum(g["noticed"] for g in gust_out),
                         "alarms": len(alarms), "false_alarms": n_false},
         }
 

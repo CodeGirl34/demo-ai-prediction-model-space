@@ -3,6 +3,7 @@
     python scripts/run_anomaly_engine.py --spacecraft MSL
     python scripts/run_anomaly_engine.py --spacecraft MSL --channels M-6 T-4 --epochs 5   # quick test
     python scripts/run_anomaly_engine.py --spacecraft MSL --seeds 5 --workers 4 --out results/msl_ensemble5
+    python scripts/run_anomaly_engine.py --spacecraft SMAP --seeds 5 --workers 6 --no-models   # for tuning
 """
 import sys
 from pathlib import Path
@@ -27,6 +28,7 @@ if __name__ == "__main__":
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--seeds", type=int, default=1, help="models per channel (ensemble)")
     ap.add_argument("--workers", type=int, default=1, help="channels trained in parallel")
+    ap.add_argument("--no-models", action="store_true", help="keep predictions only, do not save model weights")
     a = ap.parse_args()
 
     cfg = Config()
@@ -34,5 +36,5 @@ if __name__ == "__main__":
         cfg.epochs = a.epochs
     cfg.n_seeds = a.seeds
     out = a.out or ROOT / "results" / a.spacecraft.lower()
-    _, summary = run(a.spacecraft, cfg, DEFAULT_ROOT, out, a.channels, a.verbose, a.workers)
+    _, summary = run(a.spacecraft, cfg, DEFAULT_ROOT, out, a.channels, a.verbose, a.workers, save_models=not a.no_models)
     print(json.dumps({k: v for k, v in summary.items() if k != "config"}, indent=2))

@@ -53,14 +53,14 @@ def run_channel(chan_id: str, true_seqs: list, cfg: Config, root: Path, model_di
 
 
 def run(spacecraft: str, cfg: Config, root: Path, out_dir: Path, channels: list[str] | None = None,
-        verbose=False, workers: int = 1):
+        verbose=False, workers: int = 1, save_models: bool = True):
     labels = data.load_labels(root, spacecraft)
     if channels:
         labels = labels[labels.chan_id.isin(channels)]
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_dir = out_dir / "predictions"
     pred_dir.mkdir(exist_ok=True)
-    model_dir = out_dir / "models"
+    model_dir = out_dir / "models" if save_models else None
 
     def _record(r, k):
         np.savez_compressed(pred_dir / f"{r['chan_id']}.npz", y=r.pop("_y"), y_hat=r.pop("_y_hat"), e_s=r.pop("_e_s"))

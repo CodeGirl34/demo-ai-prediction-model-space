@@ -122,6 +122,72 @@
         "Curiosity -> Perseverance": 0.475,
         "Perseverance -> Curiosity": 0.406
       }
+    },
+    "or_persistence_blind": {
+      "tp": 176.0,
+      "fp": 265.0,
+      "fn": 144.0,
+      "precision": 0.399,
+      "recall": 0.55,
+      "f1": 0.463,
+      "f0.5": 0.422,
+      "false_alarms_on_clean_landings": 7,
+      "recall_by_fault_type": {
+        "spike": 0.944,
+        "bias": 0.558,
+        "drift": 0.526,
+        "stuck": 0.077,
+        "noise": 0.943,
+        "dropout": 0.231
+      },
+      "recall_by_phase": {
+        "approach": 0.782,
+        "entry": 0.574,
+        "parachute": 0.422,
+        "powered_descent": 0.408,
+        "sky_crane": 0.475
+      },
+      "recall_by_channel": {
+        "sensed_accel_m_s2": 0.475,
+        "vertical_speed_m_s": 0.625
+      },
+      "recall_by_direction": {
+        "Curiosity -> Perseverance": 0.575,
+        "Perseverance -> Curiosity": 0.525
+      }
+    },
+    "or_persistence_aware": {
+      "tp": 176.0,
+      "fp": 187.0,
+      "fn": 144.0,
+      "precision": 0.485,
+      "recall": 0.55,
+      "f1": 0.515,
+      "f0.5": 0.497,
+      "false_alarms_on_clean_landings": 5,
+      "recall_by_fault_type": {
+        "spike": 0.926,
+        "bias": 0.596,
+        "drift": 0.509,
+        "stuck": 0.077,
+        "noise": 0.943,
+        "dropout": 0.231
+      },
+      "recall_by_phase": {
+        "approach": 0.744,
+        "entry": 0.588,
+        "parachute": 0.453,
+        "powered_descent": 0.408,
+        "sky_crane": 0.475
+      },
+      "recall_by_channel": {
+        "sensed_accel_m_s2": 0.469,
+        "vertical_speed_m_s": 0.631
+      },
+      "recall_by_direction": {
+        "Curiosity -> Perseverance": 0.581,
+        "Perseverance -> Curiosity": 0.519
+      }
     }
   }
 }

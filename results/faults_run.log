@@ -28,14 +28,20 @@
     vertical_speed_m_s: 40/40 scenarios
 
 === RESULTS (both directions, both channels)
-persistence baseline   recall=0.359 precision=0.602 F1=0.450 false-alarms-on-clean=2
-                       by type  {'spike': 0.926, 'bias': 0.019, 'drift': 0.035, 'stuck': 0.038, 'noise': 0.943, 'dropout': 0.192}
-                       by phase {'approach': 0.474, 'entry': 0.353, 'parachute': 0.281, 'powered_descent': 0.306, 'sky_crane': 0.344}
-LSTM phase-blind       recall=0.447 precision=0.350 F1=0.393 false-alarms-on-clean=7
-                       by type  {'spike': 0.741, 'bias': 0.558, 'drift': 0.526, 'stuck': 0.077, 'noise': 0.528, 'dropout': 0.231}
-                       by phase {'approach': 0.756, 'entry': 0.515, 'parachute': 0.266, 'powered_descent': 0.286, 'sky_crane': 0.295}
-LSTM phase-aware       recall=0.441 precision=0.430 F1=0.435 false-alarms-on-clean=5
-                       by type  {'spike': 0.667, 'bias': 0.596, 'drift': 0.509, 'stuck': 0.077, 'noise': 0.547, 'dropout': 0.231}
-                       by phase {'approach': 0.692, 'entry': 0.515, 'parachute': 0.312, 'powered_descent': 0.286, 'sky_crane': 0.295}
+persistence baseline       recall=0.359 precision=0.602 F1=0.450 false-alarms-on-clean=2
+                           by type  {'spike': 0.926, 'bias': 0.019, 'drift': 0.035, 'stuck': 0.038, 'noise': 0.943, 'dropout': 0.192}
+                           by phase {'approach': 0.474, 'entry': 0.353, 'parachute': 0.281, 'powered_descent': 0.306, 'sky_crane': 0.344}
+LSTM phase-blind           recall=0.447 precision=0.350 F1=0.393 false-alarms-on-clean=7
+                           by type  {'spike': 0.741, 'bias': 0.558, 'drift': 0.526, 'stuck': 0.077, 'noise': 0.528, 'dropout': 0.231}
+                           by phase {'approach': 0.756, 'entry': 0.515, 'parachute': 0.266, 'powered_descent': 0.286, 'sky_crane': 0.295}
+LSTM phase-aware           recall=0.441 precision=0.430 F1=0.435 false-alarms-on-clean=5
+                           by type  {'spike': 0.667, 'bias': 0.596, 'drift': 0.509, 'stuck': 0.077, 'noise': 0.547, 'dropout': 0.231}
+                           by phase {'approach': 0.692, 'entry': 0.515, 'parachute': 0.312, 'powered_descent': 0.286, 'sky_crane': 0.295}
+baseline OR phase-blind    recall=0.550 precision=0.399 F1=0.463 false-alarms-on-clean=7
+                           by type  {'spike': 0.944, 'bias': 0.558, 'drift': 0.526, 'stuck': 0.077, 'noise': 0.943, 'dropout': 0.231}
+                           by phase {'approach': 0.782, 'entry': 0.574, 'parachute': 0.422, 'powered_descent': 0.408, 'sky_crane': 0.475}
+baseline OR phase-aware    recall=0.550 precision=0.485 F1=0.515 false-alarms-on-clean=5
+                           by type  {'spike': 0.926, 'bias': 0.596, 'drift': 0.509, 'stuck': 0.077, 'noise': 0.943, 'dropout': 0.231}
+                           by phase {'approach': 0.744, 'entry': 0.588, 'parachute': 0.453, 'powered_descent': 0.408, 'sky_crane': 0.475}
 
 saved /Users/janaadham/Desktop/GitHub/demo-ai-prediction-model-space/results/faults

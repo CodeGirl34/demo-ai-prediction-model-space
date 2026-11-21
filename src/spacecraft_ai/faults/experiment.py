@@ -12,7 +12,9 @@ Protocol (same spirit as module 2: never test on the landing you trained on)
   4. Detect with the module-1 dynamic threshold and score each injected fault as caught / missed;
      also run every detector on the clean test landing to count false alarms.
 
-Detectors: persistence baseline (predict "same as last sample"), phase-blind LSTM, phase-aware LSTM.
+Detectors: persistence baseline (predict "same as last sample"), phase-blind LSTM, phase-aware LSTM,
+and OR-combinations of the baseline with each LSTM (the baseline is strong on sudden faults, the
+LSTMs on slow ones).
 """
 from dataclasses import replace
 
@@ -28,6 +30,12 @@ from . import inject
 CHANNELS = ["sensed_accel_m_s2", "vertical_speed_m_s"]
 CONTEXT = ["log_altitude", "speed_rel_mars_m_s"]
 DETECTORS = ["persistence", "lstm_phase_blind", "lstm_phase_aware"]
+# combined detectors: alarm when EITHER member fires; overlapping alarms are merged into one
+COMBINED = {
+    "or_persistence_blind": ("persistence", "lstm_phase_blind"),
+    "or_persistence_aware": ("persistence", "lstm_phase_aware"),
+}
+ALL_DETECTORS = DETECTORS + list(COMBINED)
 
 CFG = Config(
     l_s=60,                       # 6 s of history at 10 Hz
@@ -58,6 +66,17 @@ def matrix(df: pd.DataFrame, target: str, scaler: Scaler, phases: np.ndarray | N
     if phases is not None:
         arr = np.concatenate([arr, np.eye(len(pclf.EDL_PHASES), dtype=np.float32)[phases]], axis=1)
     return arr
+
+
+def merge_sequences(seqs: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Union of alarm intervals; overlapping or touching intervals become one alarm."""
+    out: list[list[int]] = []
+    for s, e in sorted(seqs):
+        if out and s <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return [(s, e) for s, e in out]
 
 
 def predicted_phases(model, df: pd.DataFrame) -> np.ndarray:
@@ -97,6 +116,8 @@ class Experiment:
                 y_hat = amodel.predict(self.models[(ch, det)], X)
             res = threshold.detect(y[:, 0], y_hat, CFG)
             out[det] = {"sequences": res.sequences, "e_s": res.e_s, "y": y[:, 0], "y_hat": y_hat}
+        for name, (a, b) in COMBINED.items():
+            out[name] = {"sequences": merge_sequences(out[a]["sequences"] + out[b]["sequences"])}
         return out
 
     def false_alarms_on_clean(self) -> dict:
@@ -104,7 +125,7 @@ class Experiment:
         for ch in CHANNELS:
             r = self.detect(self.test, ch)
             ph = r["_phases"]
-            for det in DETECTORS:
+            for det in ALL_DETECTORS:
                 for s, e in r[det]["sequences"]:
                     rows.append({"channel": ch, "detector": det, "start": s, "end": e,
                                  "phase": pclf.EDL_PHASES[ph[min(s, len(ph) - 1)]]})
@@ -118,7 +139,7 @@ class Experiment:
                 df, faults = inject.scenario(self.test, ch, self.rng, scale, faults_per_scenario,
                                              min_start=CFG.l_s * 3)
                 r = self.detect(df, ch)
-                for det in DETECTORS:
+                for det in ALL_DETECTORS:
                     seqs = r[det]["sequences"]
                     for f in faults:
                         caught = any(s <= f.end and f.start <= e for s, e in seqs)

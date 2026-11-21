@@ -181,21 +181,29 @@ the module-1 dynamic threshold:
   flags in the MSL telemetry). The phase is **never taken from the labels**: it is what the
   module-2 classifier predicts from the faulty data at that moment.
 
+Plus two **combined detectors** that raise an alarm when *either* member fires (alarms that
+overlap are merged into one): baseline OR phase-blind, and baseline OR phase-aware.
+
 ### Results
 
 | Detector | Faults caught | False alarms (faulty runs) | False alarms on clean landings | Precision | F1 |
 |---|---|---|---|---|---|
 | persistence baseline | 115 / 320 (36 %) | 76 | 2 | 0.60 | 0.45 |
 | LSTM phase-blind | 143 / 320 (45 %) | 265 | 7 | 0.35 | 0.39 |
-| **LSTM phase-aware** | 141 / 320 (44 %) | **187** | **5** | 0.43 | 0.44 |
+| LSTM phase-aware | 141 / 320 (44 %) | 187 | 5 | 0.43 | 0.44 |
+| baseline OR phase-blind | 176 / 320 (55 %) | 265 | 7 | 0.40 | 0.46 |
+| **baseline OR phase-aware** | **176 / 320 (55 %)** | **187** | **5** | **0.49** | **0.52** |
 
 Fraction of faults caught, by type:
 
 | | spike | bias | drift | stuck | noise | dropout |
 |---|---|---|---|---|---|---|
-| persistence baseline | **0.93** | 0.02 | 0.04 | 0.04 | **0.94** | 0.19 |
-| LSTM phase-blind | 0.74 | 0.56 | **0.53** | 0.08 | 0.53 | 0.23 |
-| LSTM phase-aware | 0.67 | **0.60** | 0.51 | 0.08 | 0.55 | 0.23 |
+| persistence baseline | 0.93 | 0.02 | 0.04 | 0.04 | 0.94 | 0.19 |
+| LSTM phase-blind | 0.74 | 0.56 | 0.53 | 0.08 | 0.53 | 0.23 |
+| LSTM phase-aware | 0.67 | 0.60 | 0.51 | 0.08 | 0.55 | 0.23 |
+| **baseline OR phase-aware** | **0.93** | **0.60** | **0.51** | 0.08 | **0.94** | 0.23 |
+
+The experiment is deterministic: re-running it reproduces every number above exactly.
 
 **What this shows**
 
@@ -204,10 +212,13 @@ Fraction of faults caught, by type:
    a fault 6 times; the phase-aware one 3 times. This is the effect the whole design is built on.
    It comes from one training run per model on two landings, so treat it as an encouraging
    result, not a precise figure.
-2. **The two detector families are complementary.** Prediction models catch slow faults
-   (bias, drift) that the "same as last reading" baseline almost never sees, and the baseline is
-   far better at sudden spikes and noise bursts. Flagging a fault when *either* the baseline or the
-   phase-aware LSTM fires catches **55 %** of all faults (vs. 44 % / 36 % alone).
+2. **Combining the baseline with the phase-aware LSTM is the best detector.** The prediction
+   model catches slow faults (bias, drift) that the "same as last reading" baseline almost never
+   sees, and the baseline catches sudden spikes and noise bursts. Together they catch **55 %** of
+   faults (vs. 44 % for the LSTM alone) with **no extra false alarms** (187 either way). The
+   baseline's false alarms fall on moments the LSTM already flags, so they merge; on the clean
+   landings, for example, both of them (Curiosity's parachute opening, Perseverance's entry)
+   coincide with LSTM alarms. Best F1: **0.52** (vs. 0.45 for the best single detector).
 3. **Hard cases.** A *stuck* sensor (8 %) or a *dropout* to zero (23 %) is nearly invisible
    when the true value is already flat or near zero: in the sky-crane hover, vertical speed is
    −0.75 m/s and acceleration equals gravity. The LSTMs also lose accuracy when Curiosity flies
@@ -216,9 +227,8 @@ Fraction of faults caught, by type:
 
 ![Vertical-speed faults on Curiosity: only the phase-aware LSTM catches the parachute-phase drift](results/faults/example_m2020_to_msl_vertical_speed_m_s.png)
 
-Next steps: combine the baseline and LSTM detectors properly (and measure the combined false
-alarms), train several seeds, and add physics cross-checks between signals (e.g. altitude rate
-vs. vertical speed) to catch stuck and dropout faults.
+Next steps: train several seeds per model, and add physics cross-checks between signals
+(e.g. altitude rate vs. vertical speed) to catch stuck and dropout faults.
 
 ---
 

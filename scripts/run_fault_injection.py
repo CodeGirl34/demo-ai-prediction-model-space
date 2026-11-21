@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from spacecraft_ai.anomaly import metrics
-from spacecraft_ai.faults.experiment import Experiment, DETECTORS, CFG
+from spacecraft_ai.faults.experiment import Experiment, DETECTORS, ALL_DETECTORS, CFG
 from spacecraft_ai.faults.inject import FAULT_TYPES
 from spacecraft_ai.phases.classifier import EDL_PHASES
 
@@ -26,7 +26,8 @@ DATA = ROOT / "data" / "processed" / "mars_edl"
 OUT = ROOT / "results" / "faults"
 NAMES = {"m2020": "Perseverance", "msl": "Curiosity"}
 LABEL = {"persistence": "persistence baseline", "lstm_phase_blind": "LSTM phase-blind",
-         "lstm_phase_aware": "LSTM phase-aware"}
+         "lstm_phase_aware": "LSTM phase-aware", "or_persistence_blind": "baseline OR phase-blind",
+         "or_persistence_aware": "baseline OR phase-aware"}
 
 
 def plot_example(df, faults, r, ch, title, path):
@@ -77,8 +78,8 @@ if __name__ == "__main__":
     faults.to_csv(OUT / "injected_faults.csv", index=False)
     fa.to_csv(OUT / "false_alarms_clean.csv", index=False)
 
-    summary = {"config": CFG.to_dict(), "n_faults_per_detector": int(len(faults) // len(DETECTORS)), "detectors": {}}
-    for det in DETECTORS:
+    summary = {"config": CFG.to_dict(), "n_faults_per_detector": int(len(faults) // len(ALL_DETECTORS)), "detectors": {}}
+    for det in ALL_DETECTORS:
         s = seqs[seqs.detector == det]
         f = faults[faults.detector == det]
         tot = metrics.summarize(int(s.true_positives.sum()), int(s.false_positives.sum()), int(s.false_negatives.sum()))
@@ -94,8 +95,8 @@ if __name__ == "__main__":
 
     print("\n=== RESULTS (both directions, both channels)")
     for det, r in summary["detectors"].items():
-        print(f"{LABEL[det]:22s} recall={r['recall']:.3f} precision={r['precision']:.3f} F1={r['f1']:.3f} "
+        print(f"{LABEL[det]:26s} recall={r['recall']:.3f} precision={r['precision']:.3f} F1={r['f1']:.3f} "
               f"false-alarms-on-clean={r['false_alarms_on_clean_landings']}")
-        print(f"{'':22s} by type  {r['recall_by_fault_type']}")
-        print(f"{'':22s} by phase {r['recall_by_phase']}")
+        print(f"{'':26s} by type  {r['recall_by_fault_type']}")
+        print(f"{'':26s} by phase {r['recall_by_phase']}")
     print(f"\nsaved {OUT}")

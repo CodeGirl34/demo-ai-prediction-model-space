@@ -50,48 +50,63 @@ class _OverviewScreenState extends State<OverviewScreen> {
     final blind = fd?['lstm_phase_blind'] as Map<String, dynamic>?;
     final aware = fd?['lstm_phase_aware'] as Map<String, dynamic>?;
 
+    final narrow = MediaQuery.sizeOf(context).width < 700;
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Phase-aware spacecraft anomaly detection',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        const Text(
-          'Learns how a spacecraft normally behaves, knows which mission phase it is in, '
-          'and raises an alarm when a sensor stops making sense.',
-          style: TextStyle(color: kMuted),
+      child: ListView(padding: const EdgeInsets.all(20), children: [
+        Text('PHASE-AWARE ANOMALY DETECTION', style: consoleLabel(color: kSignal, size: 10.5)),
+        const SizedBox(height: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: Text(
+            'An AI that learns how a spacecraft normally behaves, knows which part of the landing it is in, '
+            'and raises an alarm when a sensor stops making sense.',
+            style: TextStyle(
+                fontFamily: kFontDisplay, fontSize: narrow ? 17 : 22, fontWeight: FontWeight.w600, height: 1.3),
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
+        _HowToRead(onOpenReplay: widget.onOpenReplay),
+        const SizedBox(height: 22),
+        _SectionLabel('Results'),
+        const SizedBox(height: 10),
         Wrap(spacing: 12, runSpacing: 12, children: [
           if (best != null)
             _Tile(
-              width: 300,
               title: 'Fault detection on Mars landings',
               icon: Icons.sensors,
-              footer: 'Baseline OR phase-aware LSTM, tested on the other rover.',
+              evidence: const [Evidence.ai, Evidence.simulated],
+              footer: 'We broke sensors on purpose during a landing the AI had never seen. '
+                  'This is how many of those faults it caught.',
               children: [
-                Metric(label: 'Faults caught', value: pct(best['recall']), color: kOk,
-                    caption: '${(best['tp'] as num).toInt()} of ${((best['tp'] as num) + (best['fn'] as num)).toInt()} injected faults'),
-                Metric(label: 'F1', value: (best['f1'] as num).toStringAsFixed(2)),
+                Metric(
+                    label: 'Faults caught',
+                    value: pct(best['recall']),
+                    color: kGo,
+                    caption:
+                        '${(best['tp'] as num).toInt()} of ${((best['tp'] as num) + (best['fn'] as num)).toInt()} injected'),
+                Metric(label: 'F1 score', value: (best['f1'] as num).toStringAsFixed(2)),
               ],
             ),
           if (aware != null && blind != null)
             _Tile(
-              width: 300,
-              title: 'Why phase awareness matters',
+              title: 'Why knowing the phase matters',
               icon: Icons.timeline,
-              footer: '≈30 % fewer false alarms while catching the same faults.',
+              evidence: const [Evidence.ai],
+              footer: 'Hard braking is normal during entry but alarming during cruise. Knowing the phase '
+                  'cuts false alarms while catching the same faults.',
               children: [
-                Metric(label: 'False alarms, phase-blind', value: '${(blind['fp'] as num).toInt()}', color: kAlarm),
-                Metric(label: 'Phase-aware', value: '${(aware['fp'] as num).toInt()}', color: kOk),
+                Metric(label: 'False alarms · phase-blind', value: '${(blind['fp'] as num).toInt()}', color: kSignal),
+                Metric(label: 'Phase-aware', value: '${(aware['fp'] as num).toInt()}', color: kGo),
               ],
             ),
           if (ph != null)
             _Tile(
-              width: 300,
               title: 'Mission-phase classifier',
               icon: Icons.flight_land,
-              footer: 'Trained on one landing, tested on the other.',
+              evidence: const [Evidence.nasa, Evidence.ai],
+              footer: 'Trained on one rover’s landing, tested on the other’s. '
+                  'How often it names the right phase.',
               children: [
                 Metric(label: 'Perseverance → Curiosity', value: pct(ph['train_m2020_test_msl']?['accuracy'])),
                 Metric(label: 'Curiosity → Perseverance', value: pct(ph['train_msl_test_m2020']?['accuracy'])),
@@ -99,56 +114,130 @@ class _OverviewScreenState extends State<OverviewScreen> {
             ),
           if (eng != null)
             _Tile(
-              width: 300,
-              title: 'NASA MSL telemetry anomalies',
+              title: 'NASA rover telemetry anomalies',
               icon: Icons.satellite_alt,
-              footer: 'LSTM + dynamic threshold (Telemanom method), expert-labeled anomalies.',
+              evidence: const [Evidence.nasa, Evidence.ai],
+              footer: 'Precision: when it raises an alarm, how often it is right. '
+                  'Recall: how many of NASA’s labeled anomalies it found.',
               children: [
                 Metric(label: 'Precision', value: pct(eng['precision'])),
                 Metric(label: 'Recall', value: pct(eng['recall'])),
               ],
             ),
         ]),
-        const SizedBox(height: 20),
-        Text('Mars landings', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 26),
+        _SectionLabel('Mars landings'),
+        const SizedBox(height: 10),
         for (final m in missions!) ...[
           _MissionCard(mission: m as Map<String, dynamic>, onReplay: widget.onOpenReplay),
           const SizedBox(height: 12),
         ],
-        const SizedBox(height: 8),
-        Text('Data: NASA JPL / NAIF SPICE reconstructions and SMAP–MSL telemetry. Faults are synthetic.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: kMuted)),
+        const SizedBox(height: 6),
+        Text('Data: NASA JPL / NAIF SPICE trajectory reconstructions and SMAP–MSL telemetry. Faults are synthetic.',
+            style: readout(size: 11, color: kInkFaint)),
+      ]),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Text(text.toUpperCase(), style: consoleLabel(color: kInkDim, size: 11, weight: FontWeight.w600)),
+        const SizedBox(width: 12),
+        const Expanded(child: SeamRule()),
+      ]);
+}
+
+/// Plain-language guide to the console: what each workspace is for, and what the colours mean.
+class _HowToRead extends StatelessWidget {
+  const _HowToRead({required this.onOpenReplay});
+  final VoidCallback onOpenReplay;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget step(String n, String title, String body) => ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: kSignalSoft, border: Border.all(color: kSignal.withValues(alpha: 0.5))),
+              child: Text(n, style: readout(size: 11, color: kSignal)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title.toUpperCase(), style: consoleLabel(color: kInk, size: 11, weight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(body, style: const TextStyle(fontSize: 12.5, color: kInkDim, height: 1.4)),
+              ]),
+            ),
+          ]),
+        );
+
+    return SectionCard(
+      title: 'How to read this console',
+      icon: Icons.help_outline,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Wrap(spacing: 24, runSpacing: 16, children: [
+          step('1', 'Overview', 'You are here. The scores below sum up how well the AI works.'),
+          step('2', 'Landing replay',
+              'Watch a real Mars landing second by second. Break a sensor on purpose and see if the AI raises an alarm.'),
+          step('3', 'Telemetry',
+              'Real data from the Curiosity rover. Red marks = problems NASA engineers found; green = what the AI found.'),
+        ]),
+        const SizedBox(height: 16),
+        const SeamRule(),
+        const SizedBox(height: 12),
+        Wrap(spacing: 18, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Text('EVERY PANEL IS TAGGED WITH ITS SOURCE', style: consoleLabel(size: 9.5)),
+          for (final e in Evidence.values)
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              EvidenceBadge(e),
+              const SizedBox(width: 8),
+              Text(e.meaning, style: const TextStyle(fontSize: 12, color: kInkDim)),
+            ]),
+        ]),
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: onOpenReplay,
+          icon: const Icon(Icons.play_arrow, size: 18),
+          label: const Text('Start with a landing replay'),
+        ),
       ]),
     );
   }
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.width, required this.title, required this.icon, required this.children, this.footer});
-  final double width;
+  const _Tile(
+      {required this.title, required this.icon, required this.children, required this.evidence, this.footer});
   final String title;
   final IconData icon;
   final List<Widget> children;
+  final List<Evidence> evidence;
   final String? footer;
 
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: BoxConstraints(minWidth: 260, maxWidth: width),
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
       child: SectionCard(
+        title: title,
+        icon: icon,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(icon, size: 18, color: kMars),
-            const SizedBox(width: 8),
-            Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600))),
-          ]),
-          const SizedBox(height: 12),
-          Wrap(spacing: 24, runSpacing: 8, children: children),
+          Wrap(spacing: 28, runSpacing: 10, children: children),
           if (footer != null) ...[
-            const SizedBox(height: 10),
-            Text(footer!, style: const TextStyle(color: kMuted, fontSize: 12)),
+            const SizedBox(height: 12),
+            Text(footer!, style: const TextStyle(color: kInkFaint, fontSize: 12, height: 1.4)),
           ],
+          const SizedBox(height: 12),
+          Wrap(spacing: 6, children: [for (final e in evidence) EvidenceBadge(e)]),
         ]),
       ),
     );
@@ -166,31 +255,42 @@ class _MissionCard extends StatelessWidget {
     final trained = mission['models_trained_on_this_landing'] == true;
     return SectionCard(
       title: '${mission['name']} · ${mission['site']}',
-      trailing: Tag(trained ? 'training landing' : 'test landing', color: trained ? kMuted : kOk),
+      icon: Icons.public,
+      evidence: const [Evidence.nasa],
+      trailing: Tag(trained ? 'AI trained on this' : 'Unseen test landing', color: trained ? kInkFaint : kGo),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${mission['program']} · landed ${mission['landing_date']} · '
-            'entry at ${(mission['entry_speed_m_s'] as num).toStringAsFixed(0)} m/s',
-            style: const TextStyle(color: kMuted)),
-        const SizedBox(height: 12),
+        Text(
+            '${mission['program']} · landed ${mission['landing_date']} · '
+            'entered the atmosphere at ${(mission['entry_speed_m_s'] as num).toStringAsFixed(0)} m/s',
+            style: readout(size: 12, color: kInkDim)),
+        const SizedBox(height: 14),
+        Text('KEY MOMENTS (T = TOUCHDOWN)', style: consoleLabel(size: 9.5)),
+        const SizedBox(height: 8),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(children: [
-            for (final e in events)
-              Padding(
-                padding: const EdgeInsets.only(right: 18),
+            for (int k = 0; k < events.length; k++) ...[
+              Container(
+                padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+                decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text((e['event'] as String).replaceAll('_', ' '),
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  Text(fmtT(e['t_s'] as num), style: const TextStyle(color: kMuted, fontSize: 12)),
-                  Text(fmtAlt(e['altitude_km'] as num), style: const TextStyle(color: kMuted, fontSize: 12)),
+                  Text((events[k]['event'] as String).replaceAll('_', ' ').toUpperCase(),
+                      style: consoleLabel(color: kInk, size: 10, weight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(fmtT(events[k]['t_s'] as num), style: readout(size: 12)),
+                  Text(fmtAlt(events[k]['altitude_km'] as num), style: readout(size: 11, color: kInkFaint)),
                 ]),
               ),
+              if (k < events.length - 1)
+                Container(width: 14, height: 1, color: kSeamLit),
+            ],
           ]),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerRight,
-          child: TextButton.icon(onPressed: onReplay, icon: const Icon(Icons.play_arrow), label: const Text('Replay landing')),
+          child: TextButton.icon(
+              onPressed: onReplay, icon: const Icon(Icons.play_arrow, size: 16), label: const Text('Replay landing')),
         ),
       ]),
     );

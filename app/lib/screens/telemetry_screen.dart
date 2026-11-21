@@ -82,31 +82,67 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         final ch = channels![i];
         final id = ch['chan_id'] as String;
         final tp = ch['true_positives'] as int, fp = ch['false_positives'] as int, fn = ch['false_negatives'] as int;
-        return ListTile(
-          dense: true,
-          selected: id == selected,
-          selectedTileColor: kSurfaceHigh,
-          title: Text(id, style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text('${ch['num_true_anoms']} labeled anomal${ch['num_true_anoms'] == 1 ? 'y' : 'ies'}'),
-          trailing: Wrap(spacing: 4, children: [
-            if (tp > 0) Tag('$tp TP', color: kOk),
-            if (fp > 0) Tag('$fp FP', color: kAlarm),
-            if (fn > 0) Tag('$fn FN', color: kFault),
-          ]),
+        final sel = id == selected;
+        return InkWell(
           onTap: () => _open(id),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+            decoration: BoxDecoration(
+              color: sel ? kSignalSoft.withValues(alpha: 0.45) : Colors.transparent,
+              border: Border(
+                left: BorderSide(color: sel ? kSignal : Colors.transparent, width: 2),
+                bottom: const BorderSide(color: kSeam),
+              ),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: LedDot(color: fn > 0 ? kCaution : (fp > 0 ? kSignal : kGo), size: 6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text(id, style: readout(size: 13, weight: FontWeight.w500, color: sel ? kSignal : kInk)),
+                    const Spacer(),
+                    Wrap(spacing: 4, children: [
+                      if (tp > 0) Tag('$tp found', color: kGo),
+                      if (fp > 0) Tag('$fp false', color: kSignal),
+                      if (fn > 0) Tag('$fn missed', color: kCaution),
+                    ]),
+                  ]),
+                  const SizedBox(height: 3),
+                  Text('${ch['num_true_anoms']} labeled anomal${ch['num_true_anoms'] == 1 ? 'y' : 'ies'}',
+                      style: readout(size: 10.5, color: kInkFaint)),
+                ]),
+              ),
+            ]),
+          ),
         );
       },
     );
     return Padding(
       padding: wide ? const EdgeInsets.all(16) : EdgeInsets.zero,
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        clipBehavior: Clip.antiAlias,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(color: kPanel, shape: chamfer(), shadows: kPanelShadow),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
-            child: Text('Curiosity (MSL) telemetry channels', style: TextStyle(fontWeight: FontWeight.w600)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Row(children: [
+              const Icon(Icons.satellite_alt, size: 14, color: kSignal),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text('CURIOSITY SENSORS',
+                      style: consoleLabel(color: kInk, size: 11.5, weight: FontWeight.w600))),
+              const EvidenceBadge(Evidence.nasa),
+            ]),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Text('${channels!.length} channels · pick one to inspect',
+                style: readout(size: 10.5, color: kInkFaint)),
+          ),
+          const SeamRule(),
           Expanded(child: tiles),
         ]),
       ),
@@ -128,40 +164,61 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SectionCard(
-        title: 'Channel ${d['chan_id']}',
-        child: Wrap(spacing: 28, runSpacing: 10, children: [
-          Metric(label: 'Anomalies caught', value: '${d['true_positives']}', color: kOk),
-          Metric(label: 'False alarms', value: '${d['false_positives']}', color: kAlarm),
-          Metric(label: 'Missed', value: '${d['false_negatives']}', color: kFault),
+        title: 'Sensor ${d['chan_id']}',
+        icon: Icons.sensors,
+        evidence: const [Evidence.nasa, Evidence.ai],
+        child: Wrap(spacing: 28, runSpacing: 12, children: [
+          Metric(label: 'Anomalies found', value: '${d['true_positives']}', color: kGo),
+          Metric(label: 'False alarms', value: '${d['false_positives']}', color: kSignal),
+          Metric(label: 'Missed', value: '${d['false_negatives']}', color: kCaution),
           const SizedBox(
-            width: 380,
+            width: 400,
             child: Text(
-              'The LSTM predicts each next reading from the previous 250. When the smoothed prediction error '
-              'crosses a dynamic threshold, an anomaly is flagged. Red bands are NASA expert labels; green bands are '
-              'what the model detected.',
-              style: TextStyle(color: kMuted, fontSize: 12),
+              'The AI reads the last 250 values and guesses the next one. When its guesses start going badly '
+              'wrong, it raises an alarm. Red = where NASA engineers say something really went wrong. '
+              'Green = where the AI raised an alarm. Overlap means the AI found it.',
+              style: TextStyle(color: kInkDim, fontSize: 12.5, height: 1.45),
             ),
           ),
         ]),
       ),
       const SizedBox(height: 12),
       SectionCard(
-        padding: 12,
-        title: 'Telemetry value vs LSTM prediction',
-        trailing: const _Legend([('actual', Colors.white70), ('predicted', kMars), ('labeled', kFault), ('detected', kOk)]),
-        child: SizedBox(
-          height: 240,
-          child: _chart(idx, [(value, Colors.white70, 1.0), (pred, kMars, 1.2)], labeled, detected),
-        ),
+        padding: 14,
+        title: 'Reading vs AI guess',
+        evidence: const [Evidence.nasa, Evidence.ai],
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Legend([
+            ('NASA reading', kObserved),
+            ('AI guess', kDerived),
+            ('NASA-labeled anomaly', kCaution),
+            ('AI alarm', kGo),
+          ]),
+          const SizedBox(height: 10),
+          _plot(240, _chart(idx, [(value, kObserved, 1.1), (pred, kDerived, 1.2)], labeled, detected)),
+        ]),
       ),
       const SizedBox(height: 12),
       SectionCard(
-        padding: 12,
-        title: 'Smoothed prediction error',
-        child: SizedBox(height: 160, child: _chart(idx, [(err, const Color(0xFFB388FF), 1.2)], labeled, detected)),
+        padding: 14,
+        title: 'How surprised the AI is',
+        evidence: const [Evidence.ai],
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('smoothed prediction error · the alarm fires when this jumps well above its recent normal level',
+              style: readout(size: 10.5, color: kInkFaint)),
+          const SizedBox(height: 10),
+          _plot(160, _chart(idx, [(err, kDerived, 1.2)], labeled, detected)),
+        ]),
       ),
     ]);
   }
+
+  Widget _plot(double h, Widget chart) => Container(
+        height: h,
+        padding: const EdgeInsets.fromLTRB(0, 8, 8, 0),
+        decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+        child: chart,
+      );
 
   Widget _chart(List<double> x, List<(List<double>, Color, double)> series, List<({double x1, double x2})> labeled,
       List<({double x1, double x2})> detected) {
@@ -195,12 +252,12 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
         borderData: FlBorderData(show: false),
         gridData: FlGridData(
           drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => const FlLine(color: Color(0x22FFFFFF), strokeWidth: 0.6),
+          getDrawingHorizontalLine: (_) => const FlLine(color: kChartGrid, strokeWidth: 1),
         ),
         rangeAnnotations: RangeAnnotations(verticalRangeAnnotations: [
-          for (final b in labeled) VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: kFault.withValues(alpha: 0.25)),
+          for (final b in labeled) VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: kCaution.withValues(alpha: 0.22)),
           for (final b in detected)
-            VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: kOk.withValues(alpha: 0.22)),
+            VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: kGo.withValues(alpha: 0.2)),
         ]),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -214,7 +271,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
                 meta: meta,
                 // skip the auto-added min/max labels that collide with the regular ticks
                 child: Text(v % _niceInterval(span) == 0 ? '${v.toInt()}' : '',
-                    style: const TextStyle(fontSize: 10, color: kMuted)),
+                    style: chartAxis()),
               ),
             ),
           ),
@@ -224,7 +281,7 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
               reservedSize: 44,
               getTitlesWidget: (v, meta) => SideTitleWidget(
                 meta: meta,
-                child: Text(meta.formattedValue, style: const TextStyle(fontSize: 10, color: kMuted)),
+                child: Text(meta.formattedValue, style: chartAxis()),
               ),
             ),
           ),
@@ -243,19 +300,4 @@ class _TelemetryScreenState extends State<TelemetryScreen> {
     }
     return 10 * mag;
   }
-}
-
-class _Legend extends StatelessWidget {
-  const _Legend(this.items);
-  final List<(String, Color)> items;
-
-  @override
-  Widget build(BuildContext context) => Wrap(spacing: 10, children: [
-        for (final (l, c) in items)
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 10, height: 10, color: c.withValues(alpha: 0.7)),
-            const SizedBox(width: 4),
-            Text(l, style: const TextStyle(fontSize: 11, color: kMuted)),
-          ]),
-      ]);
 }

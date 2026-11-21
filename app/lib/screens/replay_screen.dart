@@ -118,10 +118,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('Inject a sensor fault'),
+          title: const Text('INJECT A SENSOR FAULT'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             DropdownButtonFormField<String>(
               initialValue: kind,
+              dropdownColor: kPanel2,
               decoration: const InputDecoration(labelText: 'Fault type'),
               items: [for (final k in _faultKinds) DropdownMenuItem(value: k, child: Text(faultLabels[k]!))],
               onChanged: (v) => setD(() => kind = v!),
@@ -129,6 +130,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: phase,
+              dropdownColor: kPanel2,
               decoration: const InputDecoration(labelText: 'During phase'),
               items: [for (final p in _phases) DropdownMenuItem(value: p, child: Text(phaseLabel(p)))],
               onChanged: (v) => setD(() => phase = v!),
@@ -168,35 +170,55 @@ class _ReplayScreenState extends State<ReplayScreen> {
 
   Widget _controls() {
     return SectionCard(
-      title: 'Landing replay',
+      title: 'Replay setup',
+      icon: Icons.tune,
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('1 · CHOOSE A LANDING', style: consoleLabel(size: 9.5)),
+        const SizedBox(height: 8),
         SegmentedButton<String>(
           segments: const [
-            ButtonSegment(value: 'msl', label: Text('Curiosity'), icon: Icon(Icons.science_outlined)),
+            ButtonSegment(value: 'msl', label: Text('Curiosity')),
             ButtonSegment(value: 'm2020', label: Text('Perseverance')),
           ],
           selected: {mission},
+          showSelectedIcon: false,
           onSelectionChanged: (s) => setState(() => mission = s.first),
         ),
-        const SizedBox(height: 6),
-        Text(
-          mission == 'msl'
-              ? 'Test landing: models were trained on Perseverance only.'
-              : 'Training landing: models learned from this one, so results are optimistic.',
-          style: TextStyle(color: mission == 'msl' ? kOk : kAlarm, fontSize: 12),
-        ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: LedDot(color: mission == 'msl' ? kGo : kSignal, size: 6),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              mission == 'msl'
+                  ? 'Fair test: the AI never saw this landing. It was trained on Perseverance only.'
+                  : 'The AI learned from this landing, so results here look better than they really are.',
+              style: const TextStyle(color: kInkDim, fontSize: 12, height: 1.4),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 18),
+        Text('2 · PICK THE SENSOR TO WATCH', style: consoleLabel(size: 9.5)),
+        const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: channel,
-          decoration: const InputDecoration(labelText: 'Monitored sensor', border: OutlineInputBorder()),
+          dropdownColor: kPanel2,
+          style: readout(size: 13),
+          decoration: const InputDecoration(isDense: true),
           items: [
             for (final e in channelLabels.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
           ],
           onChanged: (v) => setState(() => channel = v!),
         ),
-        const SizedBox(height: 14),
-        const Text('Injected faults', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
+        const SizedBox(height: 18),
+        Row(children: [
+          Expanded(child: Text('3 · BREAK IT ON PURPOSE', style: consoleLabel(size: 9.5))),
+          const EvidenceBadge(Evidence.simulated),
+        ]),
+        const SizedBox(height: 8),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (int i = 0; i < faults.length; i++)
             InputChip(
@@ -209,7 +231,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
               label: Text('$randomFaults random (seed $seed)'),
               onDeleted: () => setState(() => randomFaults = 0),
             ),
-          if (faults.isEmpty && randomFaults == 0) const Text('none – clean landing', style: TextStyle(color: kMuted)),
+          if (faults.isEmpty && randomFaults == 0)
+            Text('No faults · clean landing', style: readout(size: 12, color: kInkFaint)),
         ]),
         const SizedBox(height: 8),
         Row(children: [
@@ -228,21 +251,21 @@ class _ReplayScreenState extends State<ReplayScreen> {
                 seed = DateTime.now().millisecondsSinceEpoch % 100000;
               }),
               icon: const Icon(Icons.casino_outlined),
-              label: const Text('Surprise me'),
+              label: const Text('Random'),
             ),
           ),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
         FilledButton.icon(
           onPressed: loading ? null : _run,
           icon: loading
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Icon(Icons.rocket_launch),
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: kInkFaint))
+              : const Icon(Icons.play_arrow, size: 18),
           label: Text(loading ? 'Running models…' : 'Run replay'),
         ),
         if (error != null && data != null) ...[
           const SizedBox(height: 8),
-          Text('$error', style: const TextStyle(color: kFault)),
+          Text('$error', style: readout(size: 11, color: kCaution)),
         ],
       ]),
     );
@@ -263,12 +286,16 @@ class _ReplayScreenState extends State<ReplayScreen> {
     ];
 
     final charts = [
-      _chartCard('Altitude above landing site (log scale)', _altChart(now)),
-      _chartCard(channelLabels[channel]!, _lineChart(value, now, kMars, faultBands, alarmBands),
-          legend: const [('injected fault', kFault), ('alarm', kAlarm)]),
-      _chartCard('Anomaly score (LSTM prediction error, log scale)',
+      _chartCard('Altitude above landing site', _altChart(now),
+          evidence: const [Evidence.nasa], note: 'log scale · background colour = AI’s phase estimate'),
+      _chartCard('Sensor: ${channelLabels[channel]!}', _lineChart(value, now, kObserved, faultBands, alarmBands),
+          evidence: const [Evidence.nasa, Evidence.simulated],
+          legend: const [('reading', kObserved), ('injected fault', kScenario), ('AI alarm', kCaution)]),
+      _chartCard('AI surprise score',
           _lineChart([for (final s in score) s.isNaN ? double.nan : math.log(math.max(s, 1e-5)) / math.ln10],
-              now, const Color(0xFFB388FF), const [], alarmBands)),
+              now, kDerived, const [], alarmBands),
+          evidence: const [Evidence.ai],
+          note: 'how far the reading is from what the AI expected · log scale · high = suspicious'),
     ];
 
     final feed = _feed(seen, injected, now);
@@ -292,41 +319,51 @@ class _ReplayScreenState extends State<ReplayScreen> {
   Widget _status(int i, bool alarmActive) {
     final pred = phasePred[i], truth = phaseTrue[i];
     final s = data!['summary'] as Map<String, dynamic>;
+    final alarmColor = alarmActive ? kCaution : kGo;
     return SectionCard(
+      title: 'Live landing',
+      icon: Icons.radar,
+      evidence: const [Evidence.nasa, Evidence.ai],
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Wrap(spacing: 20, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('AI phase estimate', style: TextStyle(color: kMuted, fontSize: 12)),
-            const SizedBox(height: 4),
+        Wrap(spacing: 28, runSpacing: 14, crossAxisAlignment: WrapCrossAlignment.end, children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text('AI THINKS WE ARE IN', style: consoleLabel(size: 10)),
+            const SizedBox(height: 6),
             PhaseChip(pred, large: true),
           ]),
-          Metric(label: 'Mission clock', value: fmtT(t[i])),
+          Metric(label: 'NASA says', value: phaseLabel(truth),
+              color: pred == truth ? kGo : kSignal, caption: pred == truth ? '✓ AI agrees' : '✗ AI disagrees'),
+          Metric(label: 'Time to touchdown', value: fmtT(t[i])),
           Metric(label: 'Altitude', value: alt[i].isNaN ? '–' : fmtAlt(alt[i])),
-          Metric(label: 'NASA timeline', value: phaseLabel(truth),
-              color: pred == truth ? kOk : kAlarm, caption: pred == truth ? 'AI agrees' : 'AI disagrees'),
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: (alarmActive ? kAlarm : kOk).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: alarmActive ? kAlarm : kOk),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: ShapeDecoration(
+              color: alarmActive ? kCautionSoft : kGoSoft,
+              shape: chamfer(cut: 6, side: alarmColor.withValues(alpha: 0.7)),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(alarmActive ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-                  color: alarmActive ? kAlarm : kOk),
-              const SizedBox(width: 6),
-              Text(alarmActive ? 'ANOMALY' : 'NOMINAL',
-                  style: TextStyle(color: alarmActive ? kAlarm : kOk, fontWeight: FontWeight.w700)),
+              LedDot(color: alarmColor, pulse: alarmActive, size: 8),
+              const SizedBox(width: 10),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(alarmActive ? 'ANOMALY' : 'NOMINAL',
+                    style: consoleLabel(color: alarmColor, size: 14, weight: FontWeight.w700)),
+                Text(alarmActive ? 'AI alarm is on' : 'sensor looks normal', style: readout(size: 10, color: kInkDim)),
+              ]),
             ]),
           ),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Row(children: [
-          IconButton.filledTonal(
+          IconButton(
             onPressed: playing ? _pause : _play,
-            icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+            icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 20),
             tooltip: playing ? 'Pause' : 'Play',
+            style: IconButton.styleFrom(
+              foregroundColor: kSignal,
+              backgroundColor: kSignalSoft,
+              shape: chamfer(cut: 6, side: kSignal.withValues(alpha: 0.5)),
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -352,115 +389,155 @@ class _ReplayScreenState extends State<ReplayScreen> {
             ),
           ),
         ]),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Row(children: [
-          const SizedBox(width: 92, child: Text('AI estimate', style: TextStyle(color: kMuted, fontSize: 12))),
+          SizedBox(width: 104, child: Text('AI ESTIMATE', style: consoleLabel(size: 9.5, color: kDerived))),
           Expanded(child: PhaseStrip(phases: phasePred, upTo: i)),
         ]),
-        const SizedBox(height: 4),
+        const SizedBox(height: 5),
         Row(children: [
-          const SizedBox(width: 92, child: Text('NASA timeline', style: TextStyle(color: kMuted, fontSize: 12))),
+          SizedBox(width: 104, child: Text('NASA TIMELINE', style: consoleLabel(size: 9.5, color: kObserved))),
           Expanded(child: PhaseStrip(phases: phaseTrue)),
         ]),
-        const SizedBox(height: 8),
-        Wrap(spacing: 10, runSpacing: 4, children: [
-          for (final p in _phases)
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 10, height: 10, color: phaseColors[p]),
-              const SizedBox(width: 4),
-              Text(phaseLabel(p), style: const TextStyle(fontSize: 12, color: kMuted)),
-            ]),
-          Text(
-              '· phase accuracy ${(((data!['phase_accuracy'] as num?) ?? 0) * 100).toStringAsFixed(1)} %'
-              ' · faults caught ${s['faults_detected']}/${s['faults_injected']}'
-              ' · false alarms ${s['false_alarms']}',
-              style: const TextStyle(fontSize: 12, color: kMuted)),
+        const SizedBox(height: 10),
+        Legend([for (final p in _phases) (phaseLabel(p), phaseColors[p]!)]),
+        const SizedBox(height: 14),
+        const SeamRule(),
+        const SizedBox(height: 12),
+        Wrap(spacing: 28, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.end, children: [
+          _Score('Phase accuracy', '${(((data!['phase_accuracy'] as num?) ?? 0) * 100).toStringAsFixed(1)} %'),
+          _Score('Faults caught', '${s['faults_detected']} / ${s['faults_injected']}',
+              color: s['faults_detected'] == s['faults_injected'] ? kGo : kSignal),
+          _Score('False alarms', '${s['false_alarms']}', color: s['false_alarms'] == 0 ? kGo : kSignal),
+          Text('scores for the whole landing', style: readout(size: 10.5, color: kInkFaint)),
         ]),
       ]),
     );
   }
 
   Widget _feed(List<Map<String, dynamic>> seen, List<Map<String, dynamic>> injected, double now) {
-    return SectionCard(
-      title: 'Alert feed',
-      trailing: Tag('${seen.length} alerts', color: seen.isEmpty ? kOk : kAlarm),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (seen.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('No anomalies so far. All monitored readings match the model’s expectations.',
-                style: TextStyle(color: kMuted)),
-          ),
-        for (final a in seen) _alertTile(a, injected),
-        const Divider(height: 28),
-        const Text('Injected faults (ground truth)', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        if (injected.isEmpty) const Text('None – this is a clean landing.', style: TextStyle(color: kMuted)),
-        for (final f in injected)
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.bolt, color: (f['start_t'] as num) <= now ? kFault : kMuted),
-            title: Text('${faultLabels[f['kind']]} during ${phaseLabel(f['phase'])}'),
-            subtitle: Text('${fmtT(f['start_t'] as num)} → ${fmtT(f['end_t'] as num)}'),
-            trailing: (f['end_t'] as num) <= now
-                ? Tag(f['detected'] == true ? 'CAUGHT' : 'MISSED', color: f['detected'] == true ? kOk : kFault)
-                : const Tag('upcoming', color: kMuted),
-          ),
-      ]),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SectionCard(
+        title: 'AI alarms',
+        icon: Icons.notifications_active_outlined,
+        evidence: const [Evidence.ai],
+        trailing: Tag('${seen.length} so far', color: seen.isEmpty ? kGo : kCaution),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (seen.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Row(children: [
+                LedDot(color: kGo, size: 6),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text('No alarms yet. Every reading so far matches what the AI expected.',
+                      style: TextStyle(color: kInkDim, fontSize: 12.5, height: 1.4)),
+                ),
+              ]),
+            ),
+          for (final a in seen) _alertTile(a, injected),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      SectionCard(
+        title: 'Faults we injected',
+        icon: Icons.bolt,
+        evidence: const [Evidence.simulated],
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('The answer key: the faults we put in on purpose. Did the AI catch each one?',
+              style: TextStyle(color: kInkFaint, fontSize: 12, height: 1.4)),
+          const SizedBox(height: 8),
+          if (injected.isEmpty) Text('None · this is a clean landing.', style: readout(size: 12, color: kInkFaint)),
+          for (final f in injected)
+            Container(
+              margin: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+              child: Row(children: [
+                Icon(Icons.bolt, size: 16, color: (f['start_t'] as num) <= now ? kScenario : kInkFaint),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${faultLabels[f['kind']]} during ${phaseLabel(f['phase'])}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text('${fmtT(f['start_t'] as num)} → ${fmtT(f['end_t'] as num)}',
+                        style: readout(size: 11, color: kInkFaint)),
+                  ]),
+                ),
+                (f['end_t'] as num) <= now
+                    ? Tag(f['detected'] == true ? 'Caught' : 'Missed', color: f['detected'] == true ? kGo : kCaution)
+                    : const Tag('Upcoming', color: kInkFaint),
+              ]),
+            ),
+        ]),
+      ),
+    ]);
   }
 
   Widget _alertTile(Map<String, dynamic> a, List<Map<String, dynamic>> injected) {
     final m = a['matches_fault'];
     final real = m != null;
     final dets = (a['detectors'] as List).map((d) => d == 'persistence' ? 'baseline' : 'LSTM').join(' + ');
+    final c = real ? kCaution : kSignal;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
       decoration: BoxDecoration(
-        color: kSurfaceHigh,
-        borderRadius: BorderRadius.circular(10),
-        border: Border(left: BorderSide(color: real ? kAlarm : kMuted, width: 3)),
+        color: kPanel2,
+        border: Border(left: BorderSide(color: c, width: 3)),
       ),
-      child: Row(children: [
-        Icon(Icons.warning_amber_rounded, color: real ? kAlarm : kMuted, size: 20),
-        const SizedBox(width: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${fmtT(a['start_t'] as num)} · ${phaseLabel(a['phase'])}',
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            Text(real
-                ? 'Matches injected ${faultLabels[injected[m as int]['kind']]!.toLowerCase()} · flagged by $dets'
-                : 'No injected fault here (false alarm) · flagged by $dets',
-                style: const TextStyle(color: kMuted, fontSize: 12)),
+            Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Text(fmtT(a['start_t'] as num), style: readout(size: 12.5, weight: FontWeight.w500)),
+              PhaseChip(a['phase'] as String),
+            ]),
+            const SizedBox(height: 6),
+            Text(
+                real
+                    ? 'Real problem: matches the ${faultLabels[injected[m as int]['kind']]!.toLowerCase()} we injected.'
+                    : 'False alarm: nothing was broken here.',
+                style: const TextStyle(fontSize: 12.5, color: kInkDim)),
+            const SizedBox(height: 2),
+            Text('flagged by $dets', style: readout(size: 10.5, color: kInkFaint)),
           ]),
+        ),
+        const SizedBox(width: 8),
+        Tag(real ? 'Correct' : 'False alarm', color: c),
+      ]),
+    );
+  }
+
+
+  Widget _chartCard(String title, Widget chart,
+      {List<(String, Color)> legend = const [], List<Evidence> evidence = const [], String? note}) {
+    return SectionCard(
+      padding: 14,
+      title: title,
+      evidence: evidence,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (legend.isNotEmpty || note != null) ...[
+          Wrap(spacing: 14, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            if (legend.isNotEmpty) Legend(legend),
+            if (note != null) Text(note, style: readout(size: 10.5, color: kInkFaint)),
+          ]),
+          const SizedBox(height: 10),
+        ],
+        Container(
+          height: 170,
+          padding: const EdgeInsets.fromLTRB(0, 8, 8, 0),
+          decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+          child: chart,
         ),
       ]),
     );
   }
 
-  Widget _chartCard(String title, Widget chart, {List<(String, Color)> legend = const []}) {
-    return SectionCard(
-      padding: 12,
-      title: title,
-      trailing: legend.isEmpty
-          ? null
-          : Wrap(spacing: 10, children: [
-              for (final (l, c) in legend)
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 10, height: 10, color: c.withValues(alpha: 0.6)),
-                  const SizedBox(width: 4),
-                  Text(l, style: const TextStyle(fontSize: 11, color: kMuted)),
-                ]),
-            ]),
-      child: SizedBox(height: 170, child: chart),
-    );
-  }
-
   Widget _altChart(double now) {
     final y = [for (final a in alt) a.isNaN ? double.nan : math.log(math.max(a, 0.005)) / math.ln10];
-    return _lineChart(y, now, Colors.white, const [], const [],
+    return _lineChart(y, now, kInk, const [], const [],
         yTitle: (v) => v == v.roundToDouble() ? fmtAlt(math.pow(10, v)) : '', phaseBands: true);
   }
 
@@ -496,10 +573,10 @@ class _ReplayScreenState extends State<ReplayScreen> {
           VerticalRangeAnnotation(x1: b.x1, x2: b.x2, color: phaseColors[b.phase]!.withValues(alpha: b.x1 <= now ? 0.16 : 0.05)),
       for (final b in alarmBands)
         if (b.x1 <= now)
-          VerticalRangeAnnotation(x1: b.x1 - 0.5, x2: math.min(b.x2, now) + 0.5, color: kAlarm.withValues(alpha: 0.35)),
+          VerticalRangeAnnotation(x1: b.x1 - 0.5, x2: math.min(b.x2, now) + 0.5, color: kCaution.withValues(alpha: 0.30)),
       // drawn last (and never thinner than a few pixels) so a one-sample spike stays visible over its alarm
       for (final b in faultBands)
-        VerticalRangeAnnotation(x1: b.x1 - minHalf, x2: b.x2 + minHalf, color: kFault.withValues(alpha: 0.5)),
+        VerticalRangeAnnotation(x1: b.x1 - minHalf, x2: b.x2 + minHalf, color: kScenario.withValues(alpha: 0.5)),
     ];
     return LineChart(
       duration: Duration.zero,
@@ -512,12 +589,12 @@ class _ReplayScreenState extends State<ReplayScreen> {
         lineTouchData: const LineTouchData(enabled: false),
         gridData: FlGridData(
           drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => const FlLine(color: Color(0x22FFFFFF), strokeWidth: 0.6),
+          getDrawingHorizontalLine: (_) => const FlLine(color: kChartGrid, strokeWidth: 1),
         ),
         borderData: FlBorderData(show: false),
         rangeAnnotations: RangeAnnotations(verticalRangeAnnotations: bands),
         extraLinesData: ExtraLinesData(verticalLines: [
-          VerticalLine(x: now, color: Colors.white70, strokeWidth: 1.2, dashArray: [4, 3]),
+          VerticalLine(x: now, color: kSignal, strokeWidth: 1.2, dashArray: [4, 3]),
         ]),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -529,7 +606,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
               interval: 200,
               getTitlesWidget: (v, meta) => SideTitleWidget(
                 meta: meta,
-                child: Text(v % 200 == 0 ? '${v.toInt()} s' : '', style: const TextStyle(fontSize: 10, color: kMuted)),
+                child: Text(v % 200 == 0 ? '${v.toInt()} s' : '', style: chartAxis()),
               ),
             ),
           ),
@@ -541,15 +618,15 @@ class _ReplayScreenState extends State<ReplayScreen> {
               getTitlesWidget: (v, meta) => SideTitleWidget(
                 meta: meta,
                 child: Text(yTitle != null ? yTitle(v) : meta.formattedValue,
-                    style: const TextStyle(fontSize: 10, color: kMuted)),
+                    style: chartAxis()),
               ),
             ),
           ),
         ),
         lineBarsData: [
           LineChartBarData(
-              spots: future, color: color.withValues(alpha: 0.15), barWidth: 1, dotData: const FlDotData(show: false)),
-          LineChartBarData(spots: past, color: color, barWidth: 1.4, dotData: const FlDotData(show: false)),
+              spots: future, color: color.withValues(alpha: 0.14), barWidth: 1, dotData: const FlDotData(show: false)),
+          LineChartBarData(spots: past, color: color, barWidth: 1.5, dotData: const FlDotData(show: false)),
         ],
       ),
     );
@@ -566,4 +643,18 @@ class _ReplayScreenState extends State<ReplayScreen> {
     }
     return out;
   }
+}
+
+class _Score extends StatelessWidget {
+  const _Score(this.label, this.value, {this.color = kInk});
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Text(label.toUpperCase(), style: consoleLabel(size: 9.5)),
+        const SizedBox(height: 3),
+        Text(value, style: readout(size: 15, weight: FontWeight.w500, color: color)),
+      ]);
 }

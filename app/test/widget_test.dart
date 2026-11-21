@@ -19,7 +19,7 @@ void main() {
     final api = Api(base: 'http://test', client: MockClient((_) async => http.Response('down', 503)));
     await tester.pumpWidget(SpacecraftAiApp(api: api));
     await tester.pumpAndSettle();
-    expect(find.text('Spacecraft AI'), findsOneWidget);
+    expect(find.text('SPACECRAFT AI'), findsOneWidget);
     expect(find.text('Could not reach the API'), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'Retry'), findsWidgets);
   });

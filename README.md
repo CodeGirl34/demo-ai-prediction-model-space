@@ -283,11 +283,17 @@ raises alarms when an injected sensor fault appears.
   travelled (NASA: 293 million miles). The 3D view is plain Flutter `CustomPainter`
   (`app/lib/journey3d.dart`) with no plugins, so it runs on web, iOS and Android.
 * **Landing replay**: pick Curiosity (the test landing) or Perseverance (the training landing) and a
-  sensor, then add faults (type + phase) or "surprise me" random ones. Playback at 10× / 30× / 90×
+  sensor, then add faults (type + phase) or "surprise me" random ones. A fault breaks the *sensor*,
+  not the spacecraft. The altitude, the trajectory and the 3D view stay exactly the same, and only
+  the reading goes wrong. Each injected fault reports how far it moved the reading. Some move it
+  very little: a stuck sensor while the real value is flat, or a dropout to zero while the vertical
+  speed is already near zero under the sky crane. The app says so instead of hiding it. Playback at 10× / 30× / 90×
   shows:
   * the AI phase estimate against NASA's timeline
   * altitude
-  * the sensor trace with fault and alarm bands
+  * the sensor trace with fault and alarm bands. A dashed line shows what a healthy sensor would have
+    read, and a 30 s close-up around the current moment makes a few-second fault easy to see.
+    Tapping an injected fault jumps the replay to it.
   * the LSTM anomaly score
   * an alert feed that says whether each alarm matches an injected fault or is a false alarm
   * **the spacecraft in 3D, phase by phase**: the steps of NASA's entry, descent and landing
@@ -312,6 +318,8 @@ raises alarms when an injected sensor fault appears.
     * `ESTIMATE`: computed from the data. Peak heating uses the Sutton–Graves relation
       (q ∝ ρ^0.5 v³, Mars scale height 11.1 km).
 
+    When an injected fault or an AI alarm is active, the 3D view says so, and the phase bar marks the
+    faults. The model itself does not move differently, because the fault is in the sensor.
     Shapes are simplified, and the parachute is drawn smaller than the real 21.5 m canopy.
     This view is also plain `CustomPainter` (`app/lib/edl3d.dart`).
 * **Telemetry**: the 27 NASA MSL channels from module 1, with the expert-labeled and detected

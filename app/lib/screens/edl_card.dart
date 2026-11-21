@@ -11,6 +11,9 @@ import '../widgets.dart';
 
 /// The flight system in 3D, configured for the current moment of the replay, with NASA's EDL
 /// sequence (Entry · Descent · Landing) as a phase bar and a step list.
+/// A stretch of the replay (seconds to touchdown), e.g. an injected sensor fault or an AI alarm.
+typedef EdlMark = ({double start, double end, String label});
+
 class EdlCard extends StatefulWidget {
   const EdlCard({
     super.key,
@@ -21,6 +24,8 @@ class EdlCard extends StatefulWidget {
     required this.speed,
     required this.onSeek,
     this.compact = false,
+    this.faults = const [],
+    this.alarms = const [],
   });
   final Api api;
   final String mission;
@@ -29,6 +34,11 @@ class EdlCard extends StatefulWidget {
   final double speed; // data seconds per real second
   final ValueChanged<double> onSeek;
   final bool compact;
+
+  /// Injected sensor faults and AI alarms. They change the sensor's reading, not the spacecraft,
+  /// so the 3D model does not move differently: the view says when one is active instead.
+  final List<EdlMark> faults;
+  final List<EdlMark> alarms;
 
   @override
   State<EdlCard> createState() => _EdlCardState();
@@ -123,6 +133,11 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
     }
     final t = shown + epilogue;
     final phase = l.phaseAt(t);
+    EdlMark? faultNow;
+    for (final f in widget.faults) {
+      if (f.start - 0.5 <= t && t <= f.end + 0.5) faultNow = f;
+    }
+    final alarmNow = widget.alarms.any((a) => a.start - 0.5 <= t && t <= a.end + 0.5);
     final k = l.currentIndex(t);
     final ev = k >= 0 ? l.events[k] : null;
     final alt = scene!.altKm;
@@ -178,16 +193,31 @@ class _EdlCardState extends State<EdlCard> with SingleTickerProviderStateMixin {
                   ]),
                 ),
               ),
-              Positioned(
-                left: 12,
-                bottom: 8,
-                child: IgnorePointer(child: Text('DRAG TO TURN', style: consoleLabel(size: 9))),
-              ),
+              if (faultNow == null && !alarmNow) // the badges need the room on a phone
+                Positioned(
+                  left: 12,
+                  bottom: 8,
+                  child: IgnorePointer(child: Text('DRAG TO TURN', style: consoleLabel(size: 9))),
+                ),
+              if (faultNow != null || alarmNow)
+                Positioned(
+                  right: 10,
+                  bottom: 8,
+                  child: IgnorePointer(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      if (faultNow != null)
+                        _Badge('SENSOR FAULT · ${faultNow.label.toUpperCase()}',
+                            'the reading is wrong, the spacecraft is fine', kScenario),
+                      if (faultNow != null && alarmNow) const SizedBox(height: 6),
+                      if (alarmNow) const _Badge('AI ALARM', 'the AI flags this reading', kCaution),
+                    ]),
+                  ),
+                ),
             ]),
           ),
         ),
         const SizedBox(height: 12),
-        _PhaseBar(tl: l, now: t),
+        _PhaseBar(tl: l, now: t, faults: widget.faults),
         const SizedBox(height: 12),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
@@ -280,20 +310,42 @@ class _EventRow extends StatelessWidget {
 }
 
 /// Approach · Entry · Descent · Landing, equal widths (not to time scale), with event ticks.
+class _Badge extends StatelessWidget {
+  const _Badge(this.title, this.sub, this.color);
+  final String title, sub;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
+        decoration: BoxDecoration(
+          color: kPanel.withValues(alpha: 0.85),
+          border: Border(left: BorderSide(color: color, width: 3)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+          Text(title, style: consoleLabel(color: color, size: 10, weight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(sub, style: readout(size: 10, color: kInkDim)),
+        ]),
+      );
+}
+
 class _PhaseBar extends StatelessWidget {
-  const _PhaseBar({required this.tl, required this.now});
+  const _PhaseBar({required this.tl, required this.now, this.faults = const []});
   final EdlTimeline tl;
   final double now;
+  final List<EdlMark> faults;
 
   @override
   Widget build(BuildContext context) =>
-      SizedBox(height: 40, child: CustomPaint(painter: _PhaseBarPainter(tl, now), size: Size.infinite));
+      SizedBox(height: 40, child: CustomPaint(painter: _PhaseBarPainter(tl, now, faults), size: Size.infinite));
 }
 
 class _PhaseBarPainter extends CustomPainter {
-  _PhaseBarPainter(this.tl, this.now);
+  _PhaseBarPainter(this.tl, this.now, this.faults);
   final EdlTimeline tl;
   final double now;
+  final List<EdlMark> faults;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -325,10 +377,16 @@ class _PhaseBarPainter extends CustomPainter {
       final ex = x(e.t);
       canvas.drawRect(Rect.fromLTWH(ex - 0.5, y - 7, 1, 14), Paint()..color = kInk.withValues(alpha: 0.55));
     }
+    // injected faults, at least 3 px wide so a short one still shows
+    for (final f in faults) {
+      final x0 = x(f.start), x1 = x(f.end);
+      final c = (x0 + x1) / 2, w = math.max(3.0, x1 - x0);
+      canvas.drawRect(Rect.fromCenter(center: Offset(c, y), width: w, height: 8), Paint()..color = kScenario);
+    }
     final cx = x(now);
     canvas.drawRect(Rect.fromCenter(center: Offset(cx, y), width: 4, height: 18), Paint()..color = kSignal);
   }
 
   @override
-  bool shouldRepaint(covariant _PhaseBarPainter old) => old.now != now || old.tl != tl;
+  bool shouldRepaint(covariant _PhaseBarPainter old) => old.now != now || old.tl != tl || old.faults != faults;
 }

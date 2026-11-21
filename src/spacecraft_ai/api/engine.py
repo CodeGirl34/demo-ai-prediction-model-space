@@ -103,9 +103,11 @@ class Engine:
         if random_faults:
             _, extra = inject.scenario(df, channel, rng, scale, random_faults, min_start=CFG.l_s * 3)
             injected += extra
+        healthy = values.copy()                      # what a working sensor would have read
         for fl in sorted(injected, key=lambda f: f.start):
             values = inject.apply(values, fl, rng)
         df[channel] = values
+        change = np.abs(values - healthy)
 
         r = run_detectors(df, channel, self.phase_model, self.scaler, self.models, detectors=SERVED)
         combined = merge_sequences(r["persistence"]["sequences"] + r["lstm_phase_aware"]["sequences"])
@@ -123,13 +125,22 @@ class Engine:
                            "peak_value": _f(np.max(np.abs(values[s:e + 1])), 3)})
         fault_out = [{"kind": f.kind, "phase": f.phase, "start_t": _f(t[f.start], 2), "end_t": _f(t[f.end], 2),
                       "magnitude": _f(f.magnitude, 3),
+                      # how much the reading actually moved: a stuck sensor or a dropout can change almost
+                      # nothing when the real value is flat or already near zero
+                      "max_change": _f(change[f.start:f.end + 1].max(), 3),
+                      "max_change_frac": _f(change[f.start:f.end + 1].max() / scale, 5),
                       "detected": any(s <= f.end and f.start <= e for s, e in combined)} for f in injected]
 
         # anomaly score per row: LSTM smoothed error (first l_s rows have no prediction yet)
         score = np.full(len(df), np.nan)
         e_s = r["lstm_phase_aware"]["e_s"]
         score[CFG.l_s:CFG.l_s + len(e_s)] = e_s
-        sl = slice(None, None, step)
+        # thin to one row per `step`, but inside each bucket keep the row where the fault moved the reading
+        # most, so a 0.1 s spike is not dropped from the curve (all rows are real samples)
+        n = len(df)
+        buckets = np.arange(0, n, step)
+        sl = np.array([b + int(np.argmax(change[b:b + step])) if change[b:b + step].max() > 0 else b
+                       for b in buckets])
         n_false = sum(a["matches_fault"] is None for a in alarms)
         return {
             "mission": mission, "channel": channel, "seed": seed, "step_s": step * DT,
@@ -138,6 +149,8 @@ class Engine:
             "altitude_km": _arr(df.altitude_km.to_numpy()[sl], 4),
             "speed_m_s": _arr(df.speed_rel_mars_m_s.to_numpy()[sl], 2),
             "value": _arr(values[sl], 3),
+            "value_healthy": _arr(healthy[sl], 3),
+            "channel_range": _f(scale, 3),
             "anomaly_score": _arr(score[sl], 5),
             "phase_true": [EDL_PHASES[i] for i in true[sl]],
             "phase_pred": [EDL_PHASES[i] for i in pred[sl]],

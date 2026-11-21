@@ -41,7 +41,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
   Timer? _timer;
 
   // decoded series
-  List<double> t = [], alt = [], value = [], score = [];
+  List<double> t = [], alt = [], value = [], healthy = [], score = [];
   List<String> phasePred = [], phaseTrue = [];
 
   @override
@@ -73,6 +73,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
         t = _nums(r['t_s']);
         alt = _nums(r['altitude_km']);
         value = _nums(r['value']);
+        healthy = r['value_healthy'] == null ? [] : _nums(r['value_healthy']);
         score = _nums(r['anomaly_score']);
         phasePred = (r['phase_pred'] as List).cast<String>();
         phaseTrue = (r['phase_true'] as List).cast<String>();
@@ -138,7 +139,12 @@ class _ReplayScreenState extends State<ReplayScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           title: const Text('INJECT A SENSOR FAULT'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text(
+                'A fault breaks the sensor, not the spacecraft. The landing itself (altitude, the 3D view) '
+                'stays the same. Only the sensor reading goes wrong, and the AI has to notice.',
+                style: TextStyle(fontSize: 12.5, color: kInkDim, height: 1.4)),
+            const SizedBox(height: 14),
             DropdownButtonFormField<String>(
               initialValue: kind,
               dropdownColor: kPanel2,
@@ -146,6 +152,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
               items: [for (final k in _faultKinds) DropdownMenuItem(value: k, child: Text(faultLabels[k]!))],
               onChanged: (v) => setD(() => kind = v!),
             ),
+            const SizedBox(height: 6),
+            Text(faultHelp[kind]!, style: const TextStyle(fontSize: 12, color: kInkFaint, height: 1.4)),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: phase,
@@ -307,9 +315,18 @@ class _ReplayScreenState extends State<ReplayScreen> {
     final charts = [
       _chartCard('Altitude above landing site', _altChart(now),
           evidence: const [Evidence.nasa], note: 'log scale · background colour = AI’s phase estimate'),
-      _chartCard('Sensor: ${channelLabels[channel]!}', _lineChart(value, now, kObserved, faultBands, alarmBands),
+      _chartCard('Sensor: ${channelLabels[channel]!}',
+          _lineChart(value, now, kObserved, faultBands, alarmBands, ref: healthy),
           evidence: const [Evidence.nasa, Evidence.simulated],
-          legend: const [('reading', kObserved), ('injected fault', kScenario), ('AI alarm', kCaution)]),
+          legend: const [
+            ('what the sensor reports', kObserved),
+            ('healthy sensor', kInkDim),
+            ('injected fault', kScenario),
+            ('AI alarm', kCaution),
+          ],
+          note: 'A fault changes only this reading, not the landing: altitude and the 3D view stay the same. '
+              'Faults last seconds, so look at the close-up, or tap a fault in “Faults we injected” to jump to it.',
+          below: _closeUp(now, faultBands, alarmBands)),
       _chartCard('AI surprise score',
           _lineChart([for (final s in score) s.isNaN ? double.nan : math.log(math.max(s, 1e-5)) / math.ln10],
               now, kDerived, const [], alarmBands),
@@ -326,6 +343,11 @@ class _ReplayScreenState extends State<ReplayScreen> {
       speed: speed.toDouble(),
       onSeek: _seekTo,
       compact: !wide,
+      faults: [
+        for (final f in injected)
+          (start: (f['start_t'] as num).toDouble(), end: (f['end_t'] as num).toDouble(), label: faultLabels[f['kind']]!)
+      ],
+      alarms: [for (final b in alarmBands) (start: b.x1, end: b.x2, label: 'alarm')],
     );
     final content = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _status(i, active),
@@ -478,31 +500,56 @@ class _ReplayScreenState extends State<ReplayScreen> {
               style: TextStyle(color: kInkFaint, fontSize: 12, height: 1.4)),
           const SizedBox(height: 8),
           if (injected.isEmpty) Text('None · this is a clean landing.', style: readout(size: 12, color: kInkFaint)),
-          for (final f in injected)
-            Container(
-              margin: const EdgeInsets.only(top: 6),
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
-              child: Row(children: [
-                Icon(Icons.bolt, size: 16, color: (f['start_t'] as num) <= now ? kScenario : kInkFaint),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${faultLabels[f['kind']]} during ${phaseLabel(f['phase'])}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 2),
-                    Text('${fmtT(f['start_t'] as num)} → ${fmtT(f['end_t'] as num)}',
-                        style: readout(size: 11, color: kInkFaint)),
-                  ]),
-                ),
-                (f['end_t'] as num) <= now
-                    ? Tag(f['detected'] == true ? 'Caught' : 'Missed', color: f['detected'] == true ? kGo : kCaution)
-                    : const Tag('Upcoming', color: kInkFaint),
-              ]),
-            ),
+          for (final f in injected) _faultTile(f, now),
         ]),
       ),
     ]);
+  }
+
+  Widget _faultTile(Map<String, dynamic> f, double now) {
+    final effect = _effect(f);
+    return InkWell(
+      // land on the fault's last sample: the close-up shows all of it and the 3D view flags it
+      onTap: () => _seekTo((f['end_t'] as num).toDouble()),
+      child: Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+        child: Row(children: [
+          Icon(Icons.bolt, size: 16, color: (f['start_t'] as num) <= now ? kScenario : kInkFaint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${faultLabels[f['kind']]} during ${phaseLabel(f['phase'])}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 2),
+              Text('${fmtT(f['start_t'] as num)} → ${fmtT(f['end_t'] as num)} · tap to see it',
+                  style: readout(size: 11, color: kInkFaint)),
+              if (effect != null) ...[
+                const SizedBox(height: 4),
+                Text(effect, style: const TextStyle(fontSize: 11.5, color: kInkDim, height: 1.35)),
+              ],
+            ]),
+          ),
+          const SizedBox(width: 8),
+          (f['end_t'] as num) <= now
+              ? Tag(f['detected'] == true ? 'Caught' : 'Missed', color: f['detected'] == true ? kGo : kCaution)
+              : const Tag('Upcoming', color: kInkFaint),
+        ]),
+      ),
+    );
+  }
+
+  /// How much the fault actually moved the reading. A stuck sensor or a dropout can change almost
+  /// nothing when the real value is flat or already near zero.
+  String? _effect(Map<String, dynamic> f) {
+    final ch = (f['max_change'] as num?)?.toDouble(), frac = (f['max_change_frac'] as num?)?.toDouble();
+    if (ch == null || frac == null) return null;
+    final v = '${ch.toStringAsFixed(ch >= 100 ? 0 : (ch >= 1 ? 1 : 2))} ${channelUnit(channel)}';
+    return frac < 0.005
+        ? 'Barely changed the reading (at most $v): the real value was nearly flat or near zero here, '
+            'so there is almost nothing to see or to catch.'
+        : 'Changed the reading by up to $v.';
   }
 
   Widget _alertTile(Map<String, dynamic> a, List<Map<String, dynamic>> injected) {
@@ -541,8 +588,26 @@ class _ReplayScreenState extends State<ReplayScreen> {
   }
 
 
+  static const _closeBack = 20.0, _closeAhead = 10.0;
+
+  /// The sensor over a 30 s window around now, where a few-second fault is easy to see.
+  Widget _closeUp(double now, List<({double x1, double x2})> faultBands, List<({double x1, double x2})> alarmBands) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 12),
+      Text('CLOSE-UP · ${_closeBack.toInt()} s BEFORE TO ${_closeAhead.toInt()} s AFTER NOW', style: consoleLabel(size: 9.5)),
+      const SizedBox(height: 6),
+      Container(
+        height: 150,
+        padding: const EdgeInsets.fromLTRB(0, 8, 8, 0),
+        decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
+        child: _lineChart(value, now, kObserved, faultBands, alarmBands,
+            ref: healthy, x0: now - _closeBack, x1: now + _closeAhead),
+      ),
+    ]);
+  }
+
   Widget _chartCard(String title, Widget chart,
-      {List<(String, Color)> legend = const [], List<Evidence> evidence = const [], String? note}) {
+      {List<(String, Color)> legend = const [], List<Evidence> evidence = const [], String? note, Widget? below}) {
     return SectionCard(
       padding: 14,
       title: title,
@@ -561,6 +626,7 @@ class _ReplayScreenState extends State<ReplayScreen> {
           decoration: BoxDecoration(color: kInset, border: Border.all(color: kSeam)),
           child: chart,
         ),
+        ?below,
       ]),
     );
   }
@@ -579,24 +645,41 @@ class _ReplayScreenState extends State<ReplayScreen> {
     List<({double x1, double x2})> alarmBands, {
     String Function(double)? yTitle,
     bool phaseBands = false,
+    List<double> ref = const [], // drawn dashed underneath, e.g. what a healthy sensor would read
+    double? x0, // optional time window (close-up)
+    double? x1,
   }) {
-    final past = <FlSpot>[], future = <FlSpot>[];
+    final minX = x0 ?? t.first, maxX = x1 ?? t.last;
+    final window = x0 != null || x1 != null;
+    final past = <FlSpot>[], future = <FlSpot>[], refSpots = <FlSpot>[];
     double lo = double.infinity, hi = -double.infinity;
     for (int k = 0; k < ys.length; k++) {
       final v = ys[k];
       if (v.isNaN) continue;
-      lo = math.min(lo, v);
-      hi = math.max(hi, v);
+      if (window && (t[k] < minX - 1 || t[k] > maxX + 1)) continue;
+      final inView = t[k] >= minX && t[k] <= maxX;
+      if (inView) {
+        lo = math.min(lo, v);
+        hi = math.max(hi, v);
+      }
       final s = FlSpot(t[k], v);
       if (t[k] <= now) past.add(s);
       if (t[k] >= now) future.add(s);
+      if (k < ref.length && !ref[k].isNaN) {
+        refSpots.add(FlSpot(t[k], ref[k]));
+        if (inView) {
+          lo = math.min(lo, ref[k]);
+          hi = math.max(hi, ref[k]);
+        }
+      }
     }
     if (lo == double.infinity) {
       lo = 0;
       hi = 1;
     }
     final pad = (hi - lo) * 0.08 + 1e-9;
-    final minHalf = math.max(0.5, (t.last - t.first) * 0.002);
+    final minHalf = window ? 0.15 : math.max(0.5, (t.last - t.first) * 0.002);
+    final xStep = window ? 5.0 : 200.0;
     final bands = <VerticalRangeAnnotation>[
       if (phaseBands)
         for (final b in _phaseRuns())
@@ -611,8 +694,8 @@ class _ReplayScreenState extends State<ReplayScreen> {
     return LineChart(
       duration: Duration.zero,
       LineChartData(
-        minX: t.first,
-        maxX: t.last,
+        minX: minX,
+        maxX: maxX,
         minY: lo - pad,
         maxY: hi + pad,
         clipData: const FlClipData.all(),
@@ -633,10 +716,10 @@ class _ReplayScreenState extends State<ReplayScreen> {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 22,
-              interval: 200,
+              interval: xStep,
               getTitlesWidget: (v, meta) => SideTitleWidget(
                 meta: meta,
-                child: Text(v % 200 == 0 ? '${v.toInt()} s' : '', style: chartAxis()),
+                child: Text(v % xStep == 0 && v > minX && v < maxX ? '${v.toInt()} s' : '', style: chartAxis()),
               ),
             ),
           ),
@@ -647,13 +730,21 @@ class _ReplayScreenState extends State<ReplayScreen> {
               interval: yTitle != null ? 1 : null,
               getTitlesWidget: (v, meta) => SideTitleWidget(
                 meta: meta,
-                child: Text(yTitle != null ? yTitle(v) : meta.formattedValue,
+                // the close-up's edge values are not round and crowd the nearest tick: leave them out
+                child: Text(window && (v == meta.min || v == meta.max) ? '' : (yTitle != null ? yTitle(v) : meta.formattedValue),
                     style: chartAxis()),
               ),
             ),
           ),
         ),
         lineBarsData: [
+          if (refSpots.isNotEmpty)
+            LineChartBarData(
+                spots: refSpots,
+                color: kInkDim.withValues(alpha: 0.7),
+                barWidth: 1,
+                dashArray: [3, 3],
+                dotData: const FlDotData(show: false)),
           LineChartBarData(
               spots: future, color: color.withValues(alpha: 0.14), barWidth: 1, dotData: const FlDotData(show: false)),
           LineChartBarData(spots: past, color: color, barWidth: 1.5, dotData: const FlDotData(show: false)),

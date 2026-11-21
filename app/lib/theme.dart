@@ -65,6 +65,18 @@ const faultLabels = <String, String>{
   'dropout': 'Dropout',
 };
 
+/// What each fault does to the reading, in plain words (shown when adding one).
+const faultHelp = <String, String>{
+  'spike': 'A split-second glitch: one wild reading, then back to normal.',
+  'bias': 'The reading jumps by a fixed amount and stays off for a few seconds.',
+  'drift': 'The reading slowly creeps away from the true value.',
+  'stuck': 'The sensor freezes on its last value. Hard to see when the real value is not changing much.',
+  'noise': 'The reading turns jittery for a few seconds, like heavy vibration.',
+  'dropout': 'The sensor reads zero. Invisible when the real value is already close to zero.',
+};
+
+String channelUnit(String channel) => channel == 'sensed_accel_m_s2' ? 'm/s²' : 'm/s';
+
 const channelLabels = <String, String>{
   'vertical_speed_m_s': 'Vertical speed (m/s)',
   'sensed_accel_m_s2': 'IMU acceleration (m/s²)',

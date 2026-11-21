@@ -54,6 +54,19 @@ def test_replay_detects_obvious_fault(client):
     assert any(a["matches_fault"] == 0 for a in r["alarms"])
 
 
+def test_replay_keeps_faults_visible(client):
+    """A 0.1 s spike survives the thinning of the curve, and each fault reports how much it moved the reading."""
+    r = client.post("/api/missions/msl/replay", json={
+        "channel": "vertical_speed_m_s",
+        "faults": [{"kind": "spike", "phase": "entry"}, {"kind": "dropout", "phase": "sky_crane"}]}).json()
+    assert len(r["value_healthy"]) == len(r["value"]) == len(r["t_s"])
+    assert all(b > a for a, b in zip(r["t_s"], r["t_s"][1:]))
+    spike, dropout = sorted(r["faults"], key=lambda f: f["start_t"])
+    gap = max(abs(v - h) for v, h in zip(r["value"], r["value_healthy"]))
+    assert gap >= 0.99 * spike["max_change"] > 0        # the spike is in the curve the app draws
+    assert dropout["max_change_frac"] < 0.005           # vertical speed is ~0 under the sky crane anyway
+
+
 def test_replay_validation(client):
     assert client.post("/api/missions/msl/replay", json={"faults": [{"kind": "meteor", "phase": "entry"}]}).status_code == 422
     assert client.post("/api/missions/venus/replay", json={}).status_code == 422
